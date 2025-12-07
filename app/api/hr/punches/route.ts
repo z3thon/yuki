@@ -123,19 +123,21 @@ export async function GET(request: NextRequest) {
     // Query param employee_id will further restrict (must be within allowedEmployeeIds)
     if (employeeId) {
       // If we already have employee_id filter from permissions, intersect them
-      if (filters.employee_id && filters.employee_id.in) {
+      if (filters.employee_id && Array.isArray(filters.employee_id.in)) {
         const allowedIds = filters.employee_id.in;
         if (allowedIds.includes(employeeId)) {
           // Query param employee_id is within allowed list, use it
           filters.employee_id = { in: [employeeId] };
+          console.log(`[${requestId}] ✅ Filtering by employee_id ${employeeId} (within allowed list)`);
         } else {
           // Query param employee_id is NOT in allowed list, return empty
-          console.log(`[${requestId}] ⚠️ Requested employee_id ${employeeId} not in allowed list, returning empty`);
+          console.log(`[${requestId}] ⚠️ Requested employee_id ${employeeId} not in allowed list ${allowedIds.join(', ')}, returning empty`);
           return NextResponse.json({ punches: [], total: 0, hasMore: false, offset: 0 });
         }
       } else {
         // No permission restriction, use query param as-is
         filters.employee_id = { in: [employeeId] };
+        console.log(`[${requestId}] ✅ Filtering by employee_id ${employeeId} (no permission restriction)`);
       }
     }
 
@@ -156,16 +158,16 @@ export async function GET(request: NextRequest) {
     // Note: Fillout API requires 'fieldId' (not 'field') and field IDs (not field names) for sorting
     console.log(`[${requestId}] 📍 Step 5: Querying Fillout API...`);
     console.log(`[${requestId}] 📊 Filters being applied:`, JSON.stringify(filters, null, 2));
-    console.log(`[${requestId}] 📊 Query params:`, {
-      employeeId,
-      clientId,
-      startDate,
-      endDate,
+    console.log(`[${requestId}] 📊 Query params from URL:`, {
+      employeeId: employeeId || '(none)',
+      clientId: clientId || '(none)',
+      startDate: startDate || '(none)',
+      endDate: endDate || '(none)',
       limit,
       offset,
     });
     
-    // Build query options - only include filters if we have any
+    // Build query options - match employees route pattern exactly
     const queryOptions: any = {
       tableId: PUNCHES_TABLE_ID,
       sort: [{ fieldId: PUNCHES_PUNCH_IN_TIME_FIELD_ID, direction: 'desc' }],
@@ -175,7 +177,7 @@ export async function GET(request: NextRequest) {
     // Only add filters if we have any (empty filters object might cause issues)
     if (Object.keys(filters).length > 0) {
       queryOptions.filters = filters;
-      console.log(`[${requestId}] ✅ Adding filters to query:`, Object.keys(filters));
+      console.log(`[${requestId}] ✅ Adding ${Object.keys(filters).length} filter(s) to query:`, Object.keys(filters));
     } else {
       console.log(`[${requestId}] ℹ️ No filters applied - querying all punches`);
     }
@@ -185,14 +187,7 @@ export async function GET(request: NextRequest) {
       queryOptions.offset = offset.toString();
     }
     
-    console.log(`[${requestId}] 📡 Final query options:`, {
-      tableId: queryOptions.tableId,
-      hasFilters: !!queryOptions.filters,
-      filterKeys: queryOptions.filters ? Object.keys(queryOptions.filters) : [],
-      sort: queryOptions.sort,
-      limit: queryOptions.limit,
-      offset: queryOptions.offset,
-    });
+    console.log(`[${requestId}] 📡 Final query options being sent:`, JSON.stringify(queryOptions, null, 2));
     
     const filloutStartTime = Date.now();
     
@@ -219,7 +214,15 @@ export async function GET(request: NextRequest) {
       offset: response?.offset,
       responseType: typeof response,
       responseKeys: response ? Object.keys(response) : [],
+      recordsType: typeof response?.records,
+      recordsIsArray: Array.isArray(response?.records),
     });
+    
+    // Log full response structure for debugging (truncated)
+    if (response) {
+      const responseStr = JSON.stringify(response, null, 2);
+      console.log(`[${requestId}] 📋 Full response (first 1000 chars):`, responseStr.substring(0, 1000));
+    }
 
     console.log(`[${requestId}] 📍 Step 6: Validating response...`);
     if (!response) {
@@ -232,39 +235,19 @@ export async function GET(request: NextRequest) {
       });
     }
     
-    // Handle response - FilloutResponse has records property directly
-    let records: any[] = [];
-    if (!response) {
-      console.error(`[${requestId}] ❌ Response is null or undefined`);
+    // Use response.records directly (matching employees route pattern)
+    // FilloutResponse type: { records: FilloutRecord[], offset?: string, hasMore?: boolean }
+    const records = response.records || [];
+    console.log(`[${requestId}] ✅ Found ${records.length} records in response.records`);
+    
+    if (!Array.isArray(records)) {
+      console.error(`[${requestId}] ❌ response.records is not an array:`, typeof records, records);
       return NextResponse.json({
         punches: [],
         total: 0,
         hasMore: false,
         offset: 0,
       });
-    }
-    
-    // FilloutResponse type defines records directly: { records: [...], hasMore?: boolean, offset?: string }
-    if (response.records && Array.isArray(response.records)) {
-      records = response.records;
-      console.log(`[${requestId}] ✅ Found ${records.length} records in response.records`);
-    } else {
-      // Fallback: check if it's an array (shouldn't happen but be defensive)
-      const responseAny = response as any;
-      if (Array.isArray(response)) {
-        records = response;
-        console.log(`[${requestId}] ⚠️ Response is array (unexpected format), found ${records.length} records`);
-      } else {
-        console.warn(`[${requestId}] ⚠️ Unexpected response format from Fillout:`, JSON.stringify(response, null, 2));
-        console.warn(`[${requestId}] ⚠️ Response type:`, typeof response);
-        console.warn(`[${requestId}] ⚠️ Response keys:`, Object.keys(response || {}));
-        return NextResponse.json({
-          punches: [],
-          total: 0,
-          hasMore: false,
-          offset: 0,
-        });
-      }
     }
 
     // Early return if no records
@@ -273,11 +256,10 @@ export async function GET(request: NextRequest) {
       console.log(`[${requestId}]   Applied filters:`, JSON.stringify(filters, null, 2));
       console.log(`[${requestId}]   Query options sent:`, JSON.stringify(queryOptions, null, 2));
       console.log(`[${requestId}]   Response structure:`, {
-        isArray: Array.isArray(response),
         hasRecords: !!response?.records,
-        recordsIsArray: Array.isArray(response?.records),
         recordsLength: response?.records?.length || 0,
         responseKeys: response ? Object.keys(response) : [],
+        fullResponse: JSON.stringify(response, null, 2).substring(0, 500), // First 500 chars
       });
       
       // Log a test query without filters to see if we can get ANY punches
@@ -291,9 +273,13 @@ export async function GET(request: NextRequest) {
         console.log(`[${requestId}] 🧪 Test query returned ${testRecords.length} records`);
         if (testRecords.length > 0) {
           console.log(`[${requestId}] 🧪 Sample record fields:`, Object.keys(testRecords[0]?.fields || {}));
+          console.log(`[${requestId}] 🧪 Sample record:`, JSON.stringify(testRecords[0], null, 2).substring(0, 300));
+        } else {
+          console.log(`[${requestId}] 🧪 Test query also returned 0 records - likely no punches in database`);
         }
       } catch (testError: any) {
         console.error(`[${requestId}] 🧪 Test query failed:`, testError?.message);
+        console.error(`[${requestId}] 🧪 Test error stack:`, testError?.stack);
       }
       
       return NextResponse.json({
