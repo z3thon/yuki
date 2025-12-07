@@ -31,11 +31,24 @@ export async function GET(request: NextRequest) {
 
     // Get user permissions once (used for both access check and filtering)
     console.log(`[${requestId}] 📍 Step 2: Getting user permissions...`);
+    console.log(`[${requestId}] 🔑 User UID: ${user.uid}, Email: ${user.email || 'no email'}`);
     const permStartTime = Date.now();
     const permissions = await getUserPermissions(user.uid);
     console.log(`[${requestId}] ⏱️ getUserPermissions took ${Date.now() - permStartTime}ms`);
     const hrPermissions = permissions.filter(p => p.appId === 'hr');
     console.log(`[${requestId}] ✅ Got ${permissions.length} total permissions, ${hrPermissions.length} HR permissions`);
+    
+    // Log permission details for debugging
+    if (hrPermissions.length > 0) {
+      console.log(`[${requestId}] 📋 HR Permissions:`, JSON.stringify(hrPermissions.map(p => ({
+        viewId: p.viewId,
+        resourceType: p.resourceType,
+        resourceId: p.resourceId,
+        actions: p.actions,
+      })), null, 2));
+    } else {
+      console.warn(`[${requestId}] ⚠️ No HR permissions found for user ${user.uid}`);
+    }
     
     // Check app access
     console.log(`[${requestId}] 📍 Step 3: Checking app access...`);
@@ -88,24 +101,44 @@ export async function GET(request: NextRequest) {
     const filters: Record<string, any> = {};
     
     // Check if user has limited access (specific employee_ids in permissions)
-    const hasLimitedAccess = hrPermissions.some(p => 
+    const timeTrackingPermissions = hrPermissions.filter(p => 
       p.viewId === 'time-tracking' && 
-      p.resourceType === 'punch' && 
-      p.resourceId // If resourceId exists, user has limited access
+      p.resourceType === 'punch'
     );
+    
+    console.log(`[${requestId}] 🔍 Time tracking permissions:`, JSON.stringify(timeTrackingPermissions.map(p => ({
+      viewId: p.viewId,
+      resourceType: p.resourceType,
+      resourceId: p.resourceId,
+      hasResourceId: !!p.resourceId,
+    })), null, 2));
+    
+    const hasLimitedAccess = timeTrackingPermissions.some(p => p.resourceId);
+    console.log(`[${requestId}] 🔍 Has limited access: ${hasLimitedAccess}`);
 
     if (hasLimitedAccess) {
       // User can only see punches for specific employees
-      const allowedEmployeeIds = hrPermissions
-        .filter(p => p.viewId === 'time-tracking' && p.resourceType === 'punch' && p.resourceId)
+      const allowedEmployeeIds = timeTrackingPermissions
+        .filter(p => p.resourceId)
         .map(p => p.resourceId)
         .filter(Boolean) as string[];
       
+      console.log(`[${requestId}] 🔍 Allowed employee IDs:`, allowedEmployeeIds);
+      
       if (allowedEmployeeIds.length > 0) {
         filters.employee_id = { in: allowedEmployeeIds };
+        console.log(`[${requestId}] ✅ Applied permission filter: employee_id in [${allowedEmployeeIds.join(', ')}]`);
       } else {
-        return NextResponse.json({ punches: [] });
+        console.warn(`[${requestId}] ⚠️ Limited access but no allowedEmployeeIds found - returning empty`);
+        return NextResponse.json({ 
+          punches: [],
+          total: 0,
+          hasMore: false,
+          offset: 0,
+        });
       }
+    } else {
+      console.log(`[${requestId}] ✅ No limited access - user can see all punches`);
     }
 
     // Get query parameters
