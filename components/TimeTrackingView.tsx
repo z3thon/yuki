@@ -225,6 +225,21 @@ export default function TimeTrackingViewComponent() {
         error: data.error,
         fullResponse: data,
       });
+      
+      // Log the actual punches array
+      if (data.punches && Array.isArray(data.punches)) {
+        console.log(`✅ CLIENT: Punches array details:`, {
+          length: data.punches.length,
+          firstPunch: data.punches[0] ? {
+            id: data.punches[0].id,
+            employeeName: data.punches[0].employeeName,
+            clientName: data.punches[0].clientName,
+          } : null,
+        });
+      } else {
+        console.warn(`⚠️ CLIENT: data.punches is not an array:`, typeof data.punches, data.punches);
+      }
+      
       setHasMore(data.hasMore || false);
       fetchInProgressRef.current = false;
       
@@ -233,7 +248,12 @@ export default function TimeTrackingViewComponent() {
         console.error('🔴 CLIENT: API returned error:', data.error);
       }
       
-      return { punches: data.punches || [] };
+      const result = { punches: data.punches || [] };
+      console.log(`✅ CLIENT: Returning from fetchPunches:`, {
+        punchesCount: result.punches.length,
+        resultKeys: Object.keys(result),
+      });
+      return result;
     } catch (error: any) {
       fetchInProgressRef.current = false;
       console.error('🔴 CLIENT: fetchPunches error:', error);

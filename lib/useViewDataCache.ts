@@ -83,13 +83,23 @@ export function useViewDataCache<T>({
     const cached = cacheRef.current.getCache<T>(viewId, cacheKey);
     const hasCachedData = !!cached;
     
+    console.log(`🔍 useViewDataCache [${viewId}:${currentCacheKey}]:`, {
+      hasCachedData,
+      cachedDataKeys: cached?.data && typeof cached.data === 'object' ? Object.keys(cached.data) : [],
+      cachedPunchesCount: cached?.data && typeof cached.data === 'object' && 'punches' in cached.data
+        ? (Array.isArray((cached.data as any).punches) ? (cached.data as any).punches.length : 'not array')
+        : 'no punches',
+    });
+    
     if (hasCachedData) {
       // Show cached data immediately
+      console.log(`✅ useViewDataCache: Using cached data for ${viewId}:${currentCacheKey}`);
       setData(cached.data);
       setLoading(false);
       setError(null);
     } else {
       // No cache, show loading state
+      console.log(`⏳ useViewDataCache: No cache, showing loading state for ${viewId}:${currentCacheKey}`);
       setLoading(true);
     }
     
@@ -115,6 +125,17 @@ export function useViewDataCache<T>({
         
         if (cancelled) return;
 
+        console.log(`🔍 useViewDataCache: Got result from fetchFn:`, {
+          resultType: typeof result,
+          isArray: Array.isArray(result),
+          resultKeys: result && typeof result === 'object' ? Object.keys(result) : [],
+          hasPunches: result && typeof result === 'object' && 'punches' in result,
+          punchesCount: result && typeof result === 'object' && 'punches' in result 
+            ? (Array.isArray((result as any).punches) ? (result as any).punches.length : 'not array')
+            : 'no punches',
+          hasCachedData,
+        });
+
         // For background refreshes with cached data, only update if we get valid new data
         // This prevents clearing existing data if API returns empty/error during background refresh
         if (hasCachedData) {
@@ -123,31 +144,53 @@ export function useViewDataCache<T>({
           
           if (result === null || result === undefined) {
             isValidUpdate = false;
+            console.log(`🔍 useViewDataCache: Result is null/undefined, isValidUpdate = false`);
           } else if (Array.isArray(result)) {
             isValidUpdate = result.length > 0;
+            console.log(`🔍 useViewDataCache: Result is array with ${result.length} items, isValidUpdate = ${isValidUpdate}`);
           } else if (typeof result === 'object') {
             // Check if object has any non-empty array properties or meaningful data
             const keys = Object.keys(result);
             isValidUpdate = keys.some(key => {
               const value = (result as any)[key];
               if (Array.isArray(value)) {
-                return value.length > 0;
+                const hasItems = value.length > 0;
+                console.log(`🔍 useViewDataCache: Key "${key}" is array with ${value.length} items, contributes ${hasItems} to isValidUpdate`);
+                return hasItems;
               }
-              return value !== null && value !== undefined;
+              const hasValue = value !== null && value !== undefined;
+              console.log(`🔍 useViewDataCache: Key "${key}" is ${typeof value}, contributes ${hasValue} to isValidUpdate`);
+              return hasValue;
             });
+            console.log(`🔍 useViewDataCache: Object result, isValidUpdate = ${isValidUpdate}`);
           } else {
             // Primitive values - always valid
             isValidUpdate = true;
+            console.log(`🔍 useViewDataCache: Result is primitive, isValidUpdate = true`);
           }
           
           if (isValidUpdate) {
+            console.log(`✅ useViewDataCache: Updating cache and data (background refresh)`);
+            console.log(`✅ useViewDataCache: Setting data to:`, {
+              resultType: typeof result,
+              resultKeys: Object.keys(result || {}),
+              punchesCount: result && typeof result === 'object' && 'punches' in result
+                ? (Array.isArray((result as any).punches) ? (result as any).punches.length : 'not array')
+                : 'no punches',
+            });
             cacheRef.current.setCache(viewId, result, cacheKey);
             setData(result);
             setError(null);
+          } else {
+            console.log(`⚠️ useViewDataCache: Result invalid, keeping cached data`);
+            console.log(`⚠️ useViewDataCache: Cached data:`, {
+              cachedKeys: cached?.data && typeof cached.data === 'object' ? Object.keys(cached.data) : [],
+            });
           }
           // If invalid/empty, keep existing cached data
         } else {
           // Initial fetch - always update (even if empty) since we have no cached data
+          console.log(`✅ useViewDataCache: Initial fetch, updating cache and data`);
           cacheRef.current.setCache(viewId, result, cacheKey);
           setData(result);
           setError(null);
