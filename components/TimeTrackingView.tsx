@@ -268,6 +268,19 @@ export default function TimeTrackingViewComponent() {
     cacheKey: fullCacheKey,
     fetchFn: fetchPunches,
   });
+  
+  // Debug: Log what we're getting from the cache hook
+  useEffect(() => {
+    console.log(`🔍 TimeTrackingView: useViewDataCache returned:`, {
+      hasData: !!data,
+      dataType: typeof data,
+      dataKeys: data && typeof data === 'object' ? Object.keys(data) : [],
+      punchesCount: data?.punches?.length || 0,
+      punchesIsArray: Array.isArray(data?.punches),
+      loading,
+      error,
+    });
+  }, [data, loading, error]);
 
   // Employees/clients are now enriched server-side, so we only need them for filters
   const employeesForFilters = allEmployeesData?.employees || [];
