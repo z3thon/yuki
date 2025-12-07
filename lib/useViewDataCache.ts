@@ -191,6 +191,13 @@ export function useViewDataCache<T>({
         } else {
           // Initial fetch - always update (even if empty) since we have no cached data
           console.log(`✅ useViewDataCache: Initial fetch, updating cache and data`);
+          console.log(`✅ useViewDataCache: Setting data to:`, {
+            resultType: typeof result,
+            resultKeys: Object.keys(result || {}),
+            punchesCount: result && typeof result === 'object' && 'punches' in result
+              ? (Array.isArray((result as any).punches) ? (result as any).punches.length : 'not array')
+              : 'no punches',
+          });
           cacheRef.current.setCache(viewId, result, cacheKey);
           setData(result);
           setError(null);
