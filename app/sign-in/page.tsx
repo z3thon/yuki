@@ -14,6 +14,9 @@ export default function SignInPage() {
 
   useEffect(() => {
     // If already authenticated, redirect to app
+    if (typeof window === 'undefined') return;
+    
+    const auth = getAuthInstance();
     const unsubscribe = auth.onAuthStateChanged((user) => {
       if (user) {
         router.push('/hr');
@@ -43,6 +46,7 @@ export default function SignInPage() {
     setLoading(true);
 
     try {
+      const auth = getAuthInstance();
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
       router.push('/hr');
