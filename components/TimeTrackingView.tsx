@@ -94,20 +94,30 @@ export default function TimeTrackingViewComponent() {
 
   // Fetch clients for filter dropdown (lazy load, don't block initial render)
   const fetchAllClients = useMemo(() => async () => {
-    const token = await getAuthToken();
-    if (!token) throw new Error('Not authenticated');
-    
-    const response = await fetch('/api/hr/clients', {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
-    
-    if (!response.ok) {
-      // Clients endpoint might not exist, return empty array
+    try {
+      const token = await getAuthToken();
+      if (!token) throw new Error('Not authenticated');
+      
+      const response = await fetch('/api/hr/clients', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      
+      if (!response.ok) {
+        // Clients endpoint might not exist (404), return empty array silently
+        // Don't log errors for 404s as this is expected behavior
+        if (response.status === 404) {
+          return { clients: [] };
+        }
+        // For other errors, still return empty array but could log if needed
+        return { clients: [] };
+      }
+
+      const data = await response.json();
+      return { clients: data.clients || [] };
+    } catch (error) {
+      // Silently handle network errors - clients endpoint may not exist
       return { clients: [] };
     }
-
-    const data = await response.json();
-    return { clients: data.clients || [] };
   }, []);
 
   const { data: allClientsData } = useViewDataCache<{ clients: Client[] }>({
@@ -127,6 +137,11 @@ export default function TimeTrackingViewComponent() {
     if (filters.status) parts.push(`status:${filters.status}`);
     return parts.length > 0 ? parts.join('|') : undefined;
   }, [filters]);
+
+  // Memoize the full cache key including displayLimit to prevent unnecessary re-renders
+  const fullCacheKey = useMemo(() => {
+    return `${cacheKey || 'all'}-limit-${displayLimit}`;
+  }, [cacheKey, displayLimit]);
 
   // Track if fetch is in progress to prevent multiple simultaneous calls
   const fetchInProgressRef = useRef(false);
@@ -203,9 +218,21 @@ export default function TimeTrackingViewComponent() {
       }
 
       const data = await response.json();
-      console.log(`✅ CLIENT: Got ${data.punches?.length || 0} punches`);
+      console.log(`✅ CLIENT: Got response:`, {
+        punchesCount: data.punches?.length || 0,
+        hasMore: data.hasMore,
+        total: data.total,
+        error: data.error,
+        fullResponse: data,
+      });
       setHasMore(data.hasMore || false);
       fetchInProgressRef.current = false;
+      
+      // Log if we got an error in the response
+      if (data.error) {
+        console.error('🔴 CLIENT: API returned error:', data.error);
+      }
+      
       return { punches: data.punches || [] };
     } catch (error: any) {
       fetchInProgressRef.current = false;
@@ -218,7 +245,7 @@ export default function TimeTrackingViewComponent() {
 
   const { data, loading, error, refetch } = useViewDataCache<{ punches: Punch[] }>({
     viewId: 'time-tracking',
-    cacheKey: `${cacheKey || 'all'}-limit-${displayLimit}`,
+    cacheKey: fullCacheKey,
     fetchFn: fetchPunches,
   });
 
@@ -412,7 +439,7 @@ export default function TimeTrackingViewComponent() {
   };
 
   const handleExport = () => {
-    const headers = ['Employee', 'Client', 'Punch In', 'Punch Out', 'Duration (hrs)', 'Status', 'Memo'];
+    const headers = ['Employee', 'Client', 'Punch In', 'Punch Out', 'Duration (hrs)', 'Status', 'Invoice', 'Memo'];
     const rows = sortedPunches.map(p => [
       p.employeeName || '',
       p.clientName || '',
@@ -420,6 +447,7 @@ export default function TimeTrackingViewComponent() {
       p.punchOutTime ? formatDateTime(p.punchOutTime) : '',
       p.duration ? (p.duration / 60).toFixed(2) : '',
       p.punchOutTime ? 'Completed' : 'Active',
+      p.invoiceNumber || '',
       p.notes || '',
     ]);
 
@@ -479,6 +507,19 @@ export default function TimeTrackingViewComponent() {
     return sortDirection === 'asc' ? <span>↑</span> : <span>↓</span>;
   };
 
+  // Debug logging
+  useEffect(() => {
+    console.log('🔍 TimeTrackingView state:', {
+      loading,
+      hasData: !!data,
+      punchesCount: data?.punches?.length || 0,
+      error,
+      enrichedPunchesCount: enrichedPunches.length,
+      filteredPunchesCount: filteredPunches.length,
+      sortedPunchesCount: sortedPunches.length,
+    });
+  }, [loading, data, error, enrichedPunches.length, filteredPunches.length, sortedPunches.length]);
+
   // Show loading only if we have no data AND we're loading
   // Don't block on employee/client data - punches should show even if names aren't loaded yet
   if (loading && !data?.punches) {
@@ -530,7 +571,6 @@ export default function TimeTrackingViewComponent() {
             <select
               value={filters.employeeId}
               onChange={(e) => setFilters({ ...filters, employeeId: e.target.value })}
-              onFocus={() => setEmployeesFilterOpen(true)}
               className="w-full px-3 py-2 bg-background/50 rounded-lg border border-foreground/10 focus:outline-none focus:border-accent-blue/50"
             >
               <option value="">All Employees</option>
@@ -548,7 +588,6 @@ export default function TimeTrackingViewComponent() {
             <select
               value={filters.clientId}
               onChange={(e) => setFilters({ ...filters, clientId: e.target.value })}
-              onFocus={() => setClientsFilterOpen(true)}
               className="w-full px-3 py-2 bg-background/50 rounded-lg border border-foreground/10 focus:outline-none focus:border-accent-blue/50"
             >
               <option value="">All Clients</option>
@@ -670,6 +709,9 @@ export default function TimeTrackingViewComponent() {
                   </div>
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-foreground/70 uppercase tracking-wider">
+                  Invoice
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-foreground/70 uppercase tracking-wider">
                   Memo
                 </th>
               </tr>
@@ -677,7 +719,7 @@ export default function TimeTrackingViewComponent() {
             <tbody className="divide-y divide-foreground/10">
               {sortedPunches.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-foreground/50">
+                  <td colSpan={8} className="px-4 py-8 text-center text-foreground/50">
                     No punches found
                   </td>
                 </tr>
@@ -727,6 +769,11 @@ export default function TimeTrackingViewComponent() {
                           Active
                         </span>
                       )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-sm text-foreground/70">
+                        {punch.invoiceNumber || '—'}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -861,6 +908,12 @@ export default function TimeTrackingViewComponent() {
                   <div>
                     <label className="text-xs text-foreground/50 uppercase tracking-wider">Duration</label>
                     <p className="mt-1 font-medium">{formatDuration(selectedPunch.duration)}</p>
+                  </div>
+                )}
+                {selectedPunch.invoiceNumber && (
+                  <div>
+                    <label className="text-xs text-foreground/50 uppercase tracking-wider">Invoice</label>
+                    <p className="mt-1 font-medium">{selectedPunch.invoiceNumber}</p>
                   </div>
                 )}
                 {selectedPunch.notes && (

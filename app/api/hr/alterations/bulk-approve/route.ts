@@ -4,6 +4,15 @@ import { checkPermission, hasAppAccess } from '@/lib/permissions';
 import { getFilloutRecord, updateFilloutRecord } from '@/lib/fillout';
 
 import { PUNCH_ALTERATIONS_TABLE_ID, PUNCHES_TABLE_ID } from '@/lib/fillout-table-ids';
+import { 
+  PUNCH_ALTERATION_REQUESTS_STATUS_FIELD_ID,
+  PUNCH_ALTERATION_REQUESTS_REVIEWED_AT_FIELD_ID,
+  PUNCH_ALTERATION_REQUESTS_REVIEW_NOTES_FIELD_ID,
+  PUNCH_ALTERATION_REQUESTS_NEW_TIMEZONE_ACTUAL_ID_FIELD_ID,
+  PUNCH_ALTERATION_REQUESTS_NEW_PUNCH_OUT_TIMEZONE_ACTUAL_ID_FIELD_ID,
+  PUNCHES_TIMEZONE_ACTUAL_ID_FIELD_ID,
+  PUNCHES_PUNCH_OUT_TIMEZONE_ACTUAL_ID_FIELD_ID
+} from '@/lib/fillout-config.generated';
 
 /**
  * POST /api/hr/alterations/bulk-approve
@@ -68,16 +77,20 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        if (alteration.fields.status !== 'pending') {
+        // Check status - try both field name and field ID
+        const currentStatus = alteration.fields.status 
+          || alteration.fields[PUNCH_ALTERATION_REQUESTS_STATUS_FIELD_ID];
+        
+        if (currentStatus !== 'pending') {
           results.failed.push({ id, error: 'Alteration is not pending' });
           continue;
         }
 
-        // Update alteration status
+        // Update alteration status using field IDs (required after field recreation)
         await updateFilloutRecord(PUNCH_ALTERATIONS_TABLE_ID, id, {
-          status: 'approved',
-          reviewed_at: new Date().toISOString(),
-          review_notes: reviewNotes || '',
+          [PUNCH_ALTERATION_REQUESTS_STATUS_FIELD_ID]: 'approved',
+          [PUNCH_ALTERATION_REQUESTS_REVIEWED_AT_FIELD_ID]: new Date().toISOString(),
+          [PUNCH_ALTERATION_REQUESTS_REVIEW_NOTES_FIELD_ID]: reviewNotes || '',
         });
 
         // Apply alteration to punch if punch_id exists
@@ -98,8 +111,8 @@ export async function POST(request: NextRequest) {
             punchUpdates.punch_out_time = alteration.fields.new_punch_out_time;
           }
           
-          // Copy new memo if provided
-          if (alteration.fields.new_memo !== undefined) {
+          // Copy new memo if provided (only if non-empty - blank means no change)
+          if (alteration.fields.new_memo !== undefined && alteration.fields.new_memo !== null && alteration.fields.new_memo !== '') {
             punchUpdates.memo = alteration.fields.new_memo;
           }
           
@@ -112,6 +125,42 @@ export async function POST(request: NextRequest) {
                 ? [alteration.fields.new_project_ids]
                 : [];
             punchUpdates.project_ids = projectIds;
+          }
+
+          // Copy new timezone IDs if provided
+          // new_timezone_actual_id goes to timezone_actual_id (punch in timezone)
+          // These are relationship arrays - copy the array directly from alteration to punch
+          // Try both field name and field ID (Fillout may return either)
+          const rawInTimezoneField = alteration.fields.new_timezone_actual_id 
+            || alteration.fields[PUNCH_ALTERATION_REQUESTS_NEW_TIMEZONE_ACTUAL_ID_FIELD_ID];
+          const rawOutTimezoneField = alteration.fields.new_punch_out_timezone_actual_id 
+            || alteration.fields[PUNCH_ALTERATION_REQUESTS_NEW_PUNCH_OUT_TIMEZONE_ACTUAL_ID_FIELD_ID];
+          
+          if (rawInTimezoneField !== undefined) {
+            // Copy the array directly - if it's already an array, use it; if single value, wrap in array
+            // Use field ID for punch update (required for linked_record fields)
+            if (Array.isArray(rawInTimezoneField)) {
+              punchUpdates[PUNCHES_TIMEZONE_ACTUAL_ID_FIELD_ID] = rawInTimezoneField;
+            } else if (rawInTimezoneField) {
+              punchUpdates[PUNCHES_TIMEZONE_ACTUAL_ID_FIELD_ID] = [rawInTimezoneField];
+            } else {
+              // null/undefined - set as empty array to clear
+              punchUpdates[PUNCHES_TIMEZONE_ACTUAL_ID_FIELD_ID] = [];
+            }
+          }
+
+          // new_punch_out_timezone_actual_id goes to punch_out_timezone_actual_id (punch out timezone)
+          if (rawOutTimezoneField !== undefined) {
+            // Copy the array directly - if it's already an array, use it; if single value, wrap in array
+            // Use field ID for punch update (required for linked_record fields)
+            if (Array.isArray(rawOutTimezoneField)) {
+              punchUpdates[PUNCHES_PUNCH_OUT_TIMEZONE_ACTUAL_ID_FIELD_ID] = rawOutTimezoneField;
+            } else if (rawOutTimezoneField) {
+              punchUpdates[PUNCHES_PUNCH_OUT_TIMEZONE_ACTUAL_ID_FIELD_ID] = [rawOutTimezoneField];
+            } else {
+              // null/undefined - set as empty array to clear
+              punchUpdates[PUNCHES_PUNCH_OUT_TIMEZONE_ACTUAL_ID_FIELD_ID] = [];
+            }
           }
 
           if (Object.keys(punchUpdates).length > 0) {

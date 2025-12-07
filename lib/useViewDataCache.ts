@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useViewCache } from '@/components/ViewCacheContext';
 
 interface UseViewDataCacheOptions<T> {
@@ -36,16 +36,54 @@ export function useViewDataCache<T>({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Use refs to store stable references to cache methods and fetchFn
+  // This prevents infinite loops when cache state updates
+  const fetchFnRef = useRef(fetchFn);
+  const cacheRef = useRef(cache);
+  const fetchingRef = useRef<string | null>(null); // Track which cacheKey is currently being fetched
+  const isMountedRef = useRef(false); // Track if component has mounted
+  
+  useEffect(() => {
+    fetchFnRef.current = fetchFn;
+    cacheRef.current = cache;
+  }, [fetchFn, cache]);
+  
+  // Track mount state - reset on viewId/cacheKey change
+  useEffect(() => {
+    isMountedRef.current = false;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [viewId, cacheKey]);
 
-  // Check cache first
+  // Combined effect: check cache and fetch data
+  // This ensures proper ordering and prevents race conditions
   useEffect(() => {
     if (!enabled) {
       setLoading(false);
       return;
     }
 
-    const cached = cache.getCache<T>(viewId, cacheKey);
-    if (cached) {
+    const currentCacheKey = cacheKey || 'default';
+    const fetchKey = `${viewId}:${currentCacheKey}`;
+    
+    // On first mount for this viewId/cacheKey, always fetch (ignore fetchingRef)
+    // This ensures fresh data on page refresh
+    const isFirstMount = !isMountedRef.current;
+    isMountedRef.current = true;
+    
+    // Clear fetchingRef if this is a different fetchKey or first mount
+    // This ensures we can fetch on page refresh even if ref has stale value
+    if (isFirstMount || fetchingRef.current !== fetchKey) {
+      fetchingRef.current = null;
+    }
+    
+    // Check cache first
+    const cached = cacheRef.current.getCache<T>(viewId, cacheKey);
+    const hasCachedData = !!cached;
+    
+    if (hasCachedData) {
       // Show cached data immediately
       setData(cached.data);
       setLoading(false);
@@ -54,26 +92,26 @@ export function useViewDataCache<T>({
       // No cache, show loading state
       setLoading(true);
     }
-  }, [viewId, cacheKey, enabled, cache]);
-
-  // Fetch fresh data in background
-  useEffect(() => {
-    if (!enabled) return;
-
-    const cached = cache.getCache<T>(viewId, cacheKey);
-    const hasCachedData = !!cached;
+    
+    // Prevent duplicate fetches for the same cacheKey
+    // But always allow fetch on first mount to handle page refresh
+    if (!isFirstMount && fetchingRef.current === fetchKey) {
+      return;
+    }
 
     // If we have cached data, fetch in background without showing loading
-    // Otherwise, fetch normally
+    // Otherwise, fetch normally (loading already set above)
     if (hasCachedData) {
       setIsRefreshing(true);
     }
 
+    // Mark that we're fetching this cacheKey
+    fetchingRef.current = fetchKey;
     let cancelled = false;
 
     const fetchData = async () => {
       try {
-        const result = await fetchFn();
+        const result = await fetchFnRef.current();
         
         if (cancelled) return;
 
@@ -103,14 +141,14 @@ export function useViewDataCache<T>({
           }
           
           if (isValidUpdate) {
-            cache.setCache(viewId, result, cacheKey);
+            cacheRef.current.setCache(viewId, result, cacheKey);
             setData(result);
             setError(null);
           }
           // If invalid/empty, keep existing cached data
         } else {
           // Initial fetch - always update (even if empty) since we have no cached data
-          cache.setCache(viewId, result, cacheKey);
+          cacheRef.current.setCache(viewId, result, cacheKey);
           setData(result);
           setError(null);
         }
@@ -128,30 +166,40 @@ export function useViewDataCache<T>({
         if (!cancelled) {
           setLoading(false);
           setIsRefreshing(false);
+          // Clear the fetching flag only if this is still the current cacheKey
+          if (fetchingRef.current === fetchKey) {
+            fetchingRef.current = null;
+          }
         }
       }
     };
 
+    // Always fetch on mount/change, even if we have cached data
+    // This ensures fresh data on page refresh
     fetchData();
 
     return () => {
       cancelled = true;
+      // Clear fetching flag if this effect is cleaning up
+      if (fetchingRef.current === fetchKey) {
+        fetchingRef.current = null;
+      }
     };
-  }, [viewId, cacheKey, enabled, fetchFn, cache]);
+  }, [viewId, cacheKey, enabled]);
 
   const refetch = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchFn();
-      cache.setCache(viewId, result, cacheKey);
+      const result = await fetchFnRef.current();
+      cacheRef.current.setCache(viewId, result, cacheKey);
       setData(result);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch data');
     } finally {
       setLoading(false);
     }
-  }, [viewId, cacheKey, fetchFn, cache]);
+  }, [viewId, cacheKey]);
 
   return {
     data,

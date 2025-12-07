@@ -11,11 +11,17 @@ interface Alteration {
     employeeId?: string;
     punchInTime: string;
     punchOutTime?: string;
+    punchInTimezoneIana?: string | null;
+    punchOutTimezoneIana?: string | null;
   };
   employeeName?: string | null;
   requestedAt: string;
   newPunchInTime?: string | null;
   newPunchOutTime?: string | null;
+  newPunchInTimezoneIana?: string | null;
+  newPunchOutTimezoneIana?: string | null;
+  newPunchInTimezoneName?: string | null;
+  newPunchOutTimezoneName?: string | null;
   newMemo?: string;
   reason?: string;
   status: 'pending' | 'approved' | 'rejected';
@@ -242,14 +248,179 @@ export default function PunchAlterationsViewComponent() {
     }
   };
 
-  const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
+  // Format date/time with timezone abbreviation
+  const formatDateTime = (dateString: string, timezoneIana?: string | null, timezoneDisplayName?: string | null) => {
+    const date = new Date(dateString);
+    
+    // Use provided timezone - if not provided, we can't display correctly
+    // Don't fall back to device timezone as that would be wrong
+    const timeZone = timezoneIana || undefined;
+    
+    // If no timezone provided, log warning and try to use display name for abbreviation
+    if (!timeZone && !timezoneDisplayName) {
+      console.warn('formatDateTime: No timezone IANA or display name provided for date:', dateString);
+    }
+    
+    // Format date and time
+    const dateTimeStr = date.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
       hour: 'numeric',
       minute: '2-digit',
+      ...(timeZone && { timeZone }), // Only include timeZone if provided
     });
+    
+    // Get timezone abbreviation - prioritize IANA name, fall back to display name
+    const timeZoneAbbr = getTimezoneAbbreviation(
+      date, 
+      timeZone || '', 
+      timezoneDisplayName
+    );
+    
+    return `${dateTimeStr} ${timeZoneAbbr}`;
+  };
+
+  // Get timezone abbreviation (e.g., "MT", "CT", "ET", "CST", "GST")
+  // Can use display name as fallback if IANA name doesn't resolve correctly
+  const getTimezoneAbbreviation = (date: Date, timeZone: string, displayName?: string | null): string => {
+    try {
+      // First priority: Use display name if IANA name is missing or invalid
+      if (displayName && (!timeZone || timeZone === '' || timeZone === 'UTC')) {
+        const nameUpper = displayName.toUpperCase();
+        if (nameUpper.includes('CHINA')) {
+          return 'CST';
+        }
+        if (nameUpper.includes('DUBAI') || nameUpper.includes('GULF')) {
+          return 'GST';
+        }
+        // Extract from display name: "China Time Standard Time" -> "CST"
+        const words = displayName.split(/\s+/);
+        if (words.length >= 3) {
+          // Take first letter of first 3 words
+          return words[0].substring(0, 1).toUpperCase() + 
+                 words[1].substring(0, 1).toUpperCase() + 
+                 words[2].substring(0, 1).toUpperCase();
+        }
+        if (words.length >= 2) {
+          return words[0].substring(0, 1).toUpperCase() + words[1].substring(0, 1).toUpperCase();
+        }
+      }
+      
+      // Second priority: Direct IANA name mapping (most reliable)
+      if (timeZone && timeZone !== '' && timeZone !== 'UTC') {
+        // Direct IANA name mapping
+        const timezoneMap: Record<string, string> = {
+          'Asia/Shanghai': 'CST',
+          'Asia/Dubai': 'GST',
+          'Asia/Beijing': 'CST',
+          'Asia/Hong_Kong': 'HKT',
+          'Asia/Tokyo': 'JST',
+          'Asia/Seoul': 'KST',
+          'Asia/Singapore': 'SGT',
+          'Asia/Mumbai': 'IST',
+          'Asia/Kolkata': 'IST',
+          'Asia/Delhi': 'IST',
+          'Asia/Bangkok': 'ICT',
+          'Asia/Jakarta': 'WIB',
+          'Asia/Manila': 'PHT',
+        };
+        
+        if (timezoneMap[timeZone]) {
+          return timezoneMap[timeZone];
+        }
+        
+        // Handle Asia timezones by city name
+        if (timeZone.includes('Asia/')) {
+          const city = timeZone.split('/')[1];
+          const asiaCityMap: Record<string, string> = {
+            'Shanghai': 'CST', 'Beijing': 'CST', 'Chongqing': 'CST', 'Hong_Kong': 'HKT',
+            'Dubai': 'GST', 'Abu_Dhabi': 'GST', 'Muscat': 'GST',
+            'Tokyo': 'JST', 'Seoul': 'KST', 'Singapore': 'SGT',
+            'Mumbai': 'IST', 'Kolkata': 'IST', 'Delhi': 'IST',
+            'Bangkok': 'ICT', 'Jakarta': 'WIB', 'Manila': 'PHT',
+          };
+          if (asiaCityMap[city]) {
+            return asiaCityMap[city];
+          }
+        }
+        
+        // Handle America timezones
+        if (timeZone.includes('America/')) {
+          const city = timeZone.split('/')[1];
+          const cityMap: Record<string, string> = {
+            'Denver': 'MT', 'Phoenix': 'MT', 'Boise': 'MT',
+            'Chicago': 'CT', 'Dallas': 'CT', 'Houston': 'CT', 'Minneapolis': 'CT',
+            'New_York': 'ET', 'Detroit': 'ET', 'Indianapolis': 'ET', 'Miami': 'ET',
+            'Los_Angeles': 'PT', 'Seattle': 'PT', 'San_Francisco': 'PT',
+            'Anchorage': 'AKT', 'Juneau': 'AKT',
+            'Honolulu': 'HT',
+          };
+          return cityMap[city] || city.substring(0, 2).toUpperCase();
+        }
+        
+        // Try Intl.DateTimeFormat as last resort for IANA names
+        try {
+          const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone,
+            timeZoneName: 'short',
+          });
+          
+          const parts = formatter.formatToParts(date);
+          const timeZoneNamePart = parts.find(part => part.type === 'timeZoneName');
+          
+          if (timeZoneNamePart) {
+            const abbr = timeZoneNamePart.value.toUpperCase();
+            
+            // Map common abbreviations
+            const abbrMap: Record<string, string> = {
+              'EST': 'ET', 'EDT': 'ET', 'CST': 'CST', 'CDT': 'CT',
+              'MST': 'MT', 'MDT': 'MT', 'PST': 'PT', 'PDT': 'PT',
+              'AKST': 'AKT', 'AKDT': 'AKT', 'HST': 'HT', 'HDT': 'HT',
+              'GMT': 'GMT', 'UTC': 'UTC',
+              'GST': 'GST', // Gulf Standard Time
+            };
+            
+            if (abbrMap[abbr]) {
+              return abbrMap[abbr];
+            }
+            
+            // For Asia timezones, preserve longer abbreviations
+            if (abbr.includes('CST') || abbr.includes('CHINA')) {
+              return 'CST';
+            }
+            if (abbr.includes('GST') || abbr.includes('GULF') || abbr.includes('DUBAI')) {
+              return 'GST';
+            }
+            
+            // Clean up and return
+            const cleaned = abbr.replace(/[+-\d]/g, '').replace(/[DST]/g, '');
+            if (cleaned.length >= 2) {
+              return cleaned.substring(0, Math.min(cleaned.length, 3));
+            }
+            return abbr.substring(0, Math.min(abbr.length, 3));
+          }
+        } catch (err) {
+          // Intl failed, continue to fallback
+        }
+      }
+      
+      // Final fallback: Use display name if available
+      if (displayName) {
+        const nameUpper = displayName.toUpperCase();
+        if (nameUpper.includes('CHINA')) {
+          return 'CST';
+        }
+        if (nameUpper.includes('DUBAI') || nameUpper.includes('GULF')) {
+          return 'GST';
+        }
+      }
+      
+      return 'UTC';
+    } catch (err) {
+      console.error('Error getting timezone abbreviation:', err, { timeZone, displayName });
+      return 'UTC';
+    }
   };
 
   const formatDuration = (minutes?: number | null) => {
@@ -419,12 +590,12 @@ export default function PunchAlterationsViewComponent() {
                           <div className="mt-0.5 space-y-0.5">
                             <div>
                               <span className="text-foreground/50">In:</span>{' '}
-                              <span className="font-mono">{formatDateTime(alteration.punchDetails.punchInTime)}</span>
+                              <span className="font-mono">{formatDateTime(alteration.punchDetails.punchInTime, alteration.punchDetails.punchInTimezoneIana)}</span>
                             </div>
                             {alteration.punchDetails.punchOutTime && (
                               <div>
                                 <span className="text-foreground/50">Out:</span>{' '}
-                                <span className="font-mono">{formatDateTime(alteration.punchDetails.punchOutTime)}</span>
+                                <span className="font-mono">{formatDateTime(alteration.punchDetails.punchOutTime, alteration.punchDetails.punchOutTimezoneIana || alteration.punchDetails.punchInTimezoneIana)}</span>
                               </div>
                             )}
                             {alteration.previousDuration !== null && alteration.previousDuration !== undefined && (
@@ -445,7 +616,7 @@ export default function PunchAlterationsViewComponent() {
                                 <div>
                                   <span className="text-foreground/50">In:</span>{' '}
                                   <span className="font-mono font-medium text-accent-blue">
-                                    {formatDateTime(alteration.newPunchInTime)}
+                                    {formatDateTime(alteration.newPunchInTime, alteration.newPunchInTimezoneIana, alteration.newPunchInTimezoneName)}
                                   </span>
                                 </div>
                               )}
@@ -453,7 +624,7 @@ export default function PunchAlterationsViewComponent() {
                                 <div>
                                   <span className="text-foreground/50">Out:</span>{' '}
                                   <span className="font-mono font-medium text-accent-blue">
-                                    {formatDateTime(alteration.newPunchOutTime)}
+                                    {formatDateTime(alteration.newPunchOutTime, alteration.newPunchOutTimezoneIana, alteration.newPunchOutTimezoneName)}
                                   </span>
                                 </div>
                               )}
@@ -511,12 +682,12 @@ export default function PunchAlterationsViewComponent() {
                     <div className="space-y-1">
                       <p className="text-sm">
                         <span className="text-foreground/50">In:</span>{' '}
-                        {formatDateTime(selectedAlteration.punchDetails.punchInTime)}
+                        {formatDateTime(selectedAlteration.punchDetails.punchInTime, selectedAlteration.punchDetails.punchInTimezoneIana)}
                       </p>
                       {selectedAlteration.punchDetails.punchOutTime && (
                         <p className="text-sm">
                           <span className="text-foreground/50">Out:</span>{' '}
-                          {formatDateTime(selectedAlteration.punchDetails.punchOutTime)}
+                          {formatDateTime(selectedAlteration.punchDetails.punchOutTime, selectedAlteration.punchDetails.punchOutTimezoneIana || selectedAlteration.punchDetails.punchInTimezoneIana)}
                         </p>
                       )}
                       {selectedAlteration.previousDuration !== null && selectedAlteration.previousDuration !== undefined && (
@@ -539,13 +710,13 @@ export default function PunchAlterationsViewComponent() {
                       {selectedAlteration.newPunchInTime && (
                         <p className="text-sm font-medium">
                           <span className="text-foreground/50">In:</span>{' '}
-                          {formatDateTime(selectedAlteration.newPunchInTime)}
+                          {formatDateTime(selectedAlteration.newPunchInTime, selectedAlteration.newPunchInTimezoneIana, selectedAlteration.newPunchInTimezoneName)}
                         </p>
                       )}
                       {selectedAlteration.newPunchOutTime && (
                         <p className="text-sm font-medium">
                           <span className="text-foreground/50">Out:</span>{' '}
-                          {formatDateTime(selectedAlteration.newPunchOutTime)}
+                          {formatDateTime(selectedAlteration.newPunchOutTime, selectedAlteration.newPunchOutTimezoneIana, selectedAlteration.newPunchOutTimezoneName)}
                         </p>
                       )}
                       {selectedAlteration.newDuration !== null && selectedAlteration.newDuration !== undefined && (
@@ -623,12 +794,12 @@ export default function PunchAlterationsViewComponent() {
                     <div className="space-y-1">
                       <p className="text-sm">
                         <span className="text-foreground/50">In:</span>{' '}
-                        {formatDateTime(selectedAlteration.punchDetails.punchInTime)}
+                        {formatDateTime(selectedAlteration.punchDetails.punchInTime, selectedAlteration.punchDetails.punchInTimezoneIana)}
                       </p>
                       {selectedAlteration.punchDetails.punchOutTime && (
                         <p className="text-sm">
                           <span className="text-foreground/50">Out:</span>{' '}
-                          {formatDateTime(selectedAlteration.punchDetails.punchOutTime)}
+                          {formatDateTime(selectedAlteration.punchDetails.punchOutTime, selectedAlteration.punchDetails.punchOutTimezoneIana || selectedAlteration.punchDetails.punchInTimezoneIana)}
                         </p>
                       )}
                       {selectedAlteration.previousDuration !== null && selectedAlteration.previousDuration !== undefined && (
@@ -651,13 +822,13 @@ export default function PunchAlterationsViewComponent() {
                       {selectedAlteration.newPunchInTime && (
                         <p className="text-sm font-medium">
                           <span className="text-foreground/50">In:</span>{' '}
-                          {formatDateTime(selectedAlteration.newPunchInTime)}
+                          {formatDateTime(selectedAlteration.newPunchInTime, selectedAlteration.newPunchInTimezoneIana, selectedAlteration.newPunchInTimezoneName)}
                         </p>
                       )}
                       {selectedAlteration.newPunchOutTime && (
                         <p className="text-sm font-medium">
                           <span className="text-foreground/50">Out:</span>{' '}
-                          {formatDateTime(selectedAlteration.newPunchOutTime)}
+                          {formatDateTime(selectedAlteration.newPunchOutTime, selectedAlteration.newPunchOutTimezoneIana, selectedAlteration.newPunchOutTimezoneName)}
                         </p>
                       )}
                       {selectedAlteration.newDuration !== null && selectedAlteration.newDuration !== undefined && (

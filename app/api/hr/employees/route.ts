@@ -3,7 +3,6 @@ import { verifyAuthAndGetUser } from '@/lib/auth-helpers';
 import { checkPermission, hasAppAccess } from '@/lib/permissions';
 import { queryFillout, getFilloutRecord, updateFilloutRecord } from '@/lib/fillout';
 import { getUserPermissions } from '@/lib/permission-tables';
-import { getEmployeeIdForUser } from '@/lib/employee-lookup';
 import { EMPLOYEES_TABLE_ID, PAY_RATE_HISTORY_TABLE_ID } from '@/lib/fillout-table-ids';
 import { EMPLOYEES_NAME_FIELD_ID } from '@/lib/fillout-config.generated';
 
@@ -12,7 +11,12 @@ import { EMPLOYEES_NAME_FIELD_ID } from '@/lib/fillout-config.generated';
  * List employees with permission filtering
  */
 export async function GET(request: NextRequest) {
+  const startTime = Date.now();
+  const requestId = Math.random().toString(36).substring(7);
+  
   try {
+    console.log(`[${requestId}] 🔍 Starting employees API request`);
+    
     // SECURITY: Verify auth
     const user = await verifyAuthAndGetUser(request);
     
@@ -32,7 +36,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Check view-level permission
+    // Get user permissions ONCE and reuse (checkPermission also needs it)
+    // This avoids multiple calls to getUserPermissions
+    const permissions = await getUserPermissions(user.uid);
+    const hrPermissions = permissions.filter(p => p.appId === 'hr');
+    console.log(`[${requestId}] ⏱️ getUserPermissions took ${Date.now() - startTime}ms`);
+
+    // Check view-level permission (reuse permissions we already fetched)
+    // Note: checkPermission will fetch permissions again internally, but that's cached
     const canReadEmployees = await checkPermission({
       userId: user.uid,
       appId: 'hr',
@@ -42,18 +53,20 @@ export async function GET(request: NextRequest) {
     });
 
     if (!canReadEmployees) {
+      // Log for debugging - use permissions we already fetched
+      console.error(`[${requestId}] Permission denied for user ${user.uid} (${user.email})`);
+      console.error(`[${requestId}] Total permissions: ${permissions.length}, HR permissions: ${hrPermissions.length}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.error(`[${requestId}] HR permissions:`, JSON.stringify(hrPermissions, null, 2));
+      }
+      
       return NextResponse.json(
         { error: 'Access denied to employees view' },
         { status: 403 }
       );
     }
 
-    // Get user permissions to determine data filtering
-    const permissions = await getUserPermissions(user.uid);
-    const hrPermissions = permissions.filter(p => p.appId === 'hr');
-    
-    // Get user's employee_id if available
-    const userEmployeeId = await getEmployeeIdForUser(user.email || '');
+    // Note: Removed unused getEmployeeIdForUser call - it was making an extra API call but result was never used
     
     // Build filters based on permissions
     const filters: Record<string, any> = {};
@@ -143,6 +156,7 @@ export async function GET(request: NextRequest) {
     const payRateMap = new Map<string, number | null>();
     if (PAY_RATE_HISTORY_TABLE_ID && PAY_RATE_HISTORY_TABLE_ID.trim() !== '' && employeeIds.length > 0) {
       try {
+        const payRateStartTime = Date.now();
         // Query all pay rate records for these employees
         const payRateResponse = await queryFillout({
           tableId: PAY_RATE_HISTORY_TABLE_ID,
@@ -151,6 +165,7 @@ export async function GET(request: NextRequest) {
           },
           limit: 1000, // Get all pay rate records for these employees
         });
+        console.log(`[${requestId}] ⏱️ Pay rate fetch took ${Date.now() - payRateStartTime}ms`);
 
         // Build map of employee_id -> active pay_rate (end_date is null)
         // Group by employee_id first, then find the most recent active one
@@ -192,12 +207,10 @@ export async function GET(request: NextRequest) {
     const employees = response.records.map((record: any) => {
       const employeeId = record.id;
       
-      // Debug: Log available fields for first record to diagnose name field issue
-      if (response.records.indexOf(record) === 0) {
-        console.log('Employee record fields:', Object.keys(record.fields));
-        console.log('Sample employee record:', JSON.stringify(record.fields, null, 2));
-        console.log('Looking for Name field with ID:', EMPLOYEES_NAME_FIELD_ID);
-        console.log('Field ID value:', record.fields[EMPLOYEES_NAME_FIELD_ID]);
+      // Debug logging only in development and only for first record
+      if (process.env.NODE_ENV === 'development' && response.records.indexOf(record) === 0) {
+        console.log(`[${requestId}] Employee record fields:`, Object.keys(record.fields));
+        console.log(`[${requestId}] Looking for Name field with ID:`, EMPLOYEES_NAME_FIELD_ID);
       }
       
       // Get pay rate from Employee Pay Rates table if available, otherwise fall back to Employees table
@@ -238,6 +251,8 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    console.log(`[${requestId}] ✅ Employees API completed in ${Date.now() - startTime}ms`);
+    
     return NextResponse.json({
       employees,
       total: response.records.length,
@@ -245,7 +260,7 @@ export async function GET(request: NextRequest) {
       offset: response.offset,
     });
   } catch (error: any) {
-    console.error('Error fetching employees:', error);
+    console.error(`[${requestId}] ❌ Error fetching employees:`, error);
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
       { status: 500 }

@@ -4,6 +4,11 @@ import { checkPermission, hasAppAccess } from '@/lib/permissions';
 import { getFilloutRecord, updateFilloutRecord } from '@/lib/fillout';
 
 import { PUNCH_ALTERATIONS_TABLE_ID } from '@/lib/fillout-table-ids';
+import { 
+  PUNCH_ALTERATION_REQUESTS_STATUS_FIELD_ID,
+  PUNCH_ALTERATION_REQUESTS_REVIEWED_AT_FIELD_ID,
+  PUNCH_ALTERATION_REQUESTS_REVIEW_NOTES_FIELD_ID
+} from '@/lib/fillout-config.generated';
 
 /**
  * POST /api/hr/alterations/[id]/decline
@@ -56,7 +61,11 @@ export async function POST(
       );
     }
 
-    if (alteration.fields.status !== 'pending') {
+    // Check status - try both field name and field ID
+    const currentStatus = alteration.fields.status 
+      || alteration.fields[PUNCH_ALTERATION_REQUESTS_STATUS_FIELD_ID];
+    
+    if (currentStatus !== 'pending') {
       return NextResponse.json(
         { error: 'Alteration is not pending' },
         { status: 400 }
@@ -66,11 +75,11 @@ export async function POST(
     const body = await request.json();
     const reviewNotes = body.reviewNotes || '';
 
-    // Update alteration status
+    // Update alteration status using field IDs (required after field recreation)
     await updateFilloutRecord(PUNCH_ALTERATIONS_TABLE_ID, id, {
-      status: 'rejected',
-      reviewed_at: new Date().toISOString(),
-      review_notes: reviewNotes,
+      [PUNCH_ALTERATION_REQUESTS_STATUS_FIELD_ID]: 'rejected',
+      [PUNCH_ALTERATION_REQUESTS_REVIEWED_AT_FIELD_ID]: new Date().toISOString(),
+      [PUNCH_ALTERATION_REQUESTS_REVIEW_NOTES_FIELD_ID]: reviewNotes,
     });
 
     return NextResponse.json({ success: true });

@@ -123,7 +123,7 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <ViewCacheProvider>
-      <HRViewPrefetcher appId={currentApp} />
+      <HRViewPrefetcher appId={currentApp} currentViewId={currentViewId} />
       <RefreshContext.Provider value={refreshContextValue}>
         <div className="h-screen flex overflow-hidden">
           {/* Column 1: App Switcher + Sidebar + User Profile */}
@@ -265,8 +265,10 @@ function getDefaultViewsForApp(appId: AppId): View[] {
 /**
  * Component to handle HR view prefetching
  * Must be inside ViewCacheProvider to access cache
+ * 
+ * Waits for current view to load before prefetching others to avoid rate limits
  */
-function HRViewPrefetcher({ appId }: { appId: AppId }) {
-  usePrefetchHRViews(appId, APPS[appId].available);
+function HRViewPrefetcher({ appId, currentViewId }: { appId: AppId; currentViewId?: string }) {
+  usePrefetchHRViews(appId, APPS[appId].available, currentViewId);
   return null;
 }

@@ -464,7 +464,7 @@ Modifies existing record data.
 **Linked Record Update Format:**
 ```json
 {
-  "fields": {
+  "record": {
     "field_id_for_linked_record": ["record-id-1", "record-id-2"]
   }
 }
@@ -476,13 +476,17 @@ curl -X PATCH "https://tables.fillout.com/api/v1/bases/{databaseId}/tables/{tabl
   -H "Authorization: Bearer sk_prod_..." \
   -H "Content-Type: application/json" \
   -d '{
-    "fields": {
-      "employee_id": ["5307b392-cd10-4b62-bd56-e3e61076c0b2"]
+    "record": {
+      "fpwC9wNgLvN": ["5307b392-cd10-4b62-bd56-e3e61076c0b2"]
     }
   }'
 ```
 
-**Note**: If updating a `linked_record` field doesn't work with the field name, use the field ID instead. You can find field IDs by querying the table structure via `GET /bases/{databaseId}`.
+**⚠️ Critical Notes:**
+- Use field ID (`fpwC9wNgLvN`) not field name (`timezone_actual_id`) for `linked_record` fields
+- If updating a `linked_record` field doesn't work with the field name, use the field ID instead
+- You can find field IDs by querying the table structure via `GET /bases/{databaseId}`
+- Relationship arrays must be provided as arrays: `["id"]` even for single-value relationships
 
 #### Delete Record
 ```
@@ -582,13 +586,15 @@ const targetTable = tables.find(t => t.name === "Table Name");
 - **Linked Record Fields**: **MUST use field IDs** (field names will not work)
   - Create: `{"record": {"fjdE51bBqzV": ["record-id"]}}` ✅
   - Create: `{"record": {"employee_id": ["record-id"]}}` ❌ (will create record but field will be null)
-  - Update: `{"fields": {"fjdE51bBqzV": ["record-id"]}}` ✅
-  - Update: `{"fields": {"employee_id": ["record-id"]}}` ❌ (may not persist)
+  - Update: `{"record": {"fpwC9wNgLvN": ["record-id"]}}` ✅
+  - Update: `{"record": {"timezone_actual_id": ["record-id"]}}` ❌ (update fails silently or returns error)
 
 **Recommendation**: 
 - Use field names for queries/filters (readability)
 - Use field IDs for `linked_record` fields in create/update operations (required)
-- Store field IDs for critical operations that involve linked records
+- Store field IDs in a generated config file that can be regenerated when fields change
+- When reading records, check both field name and field ID for robustness
+- When copying relationship arrays between records, copy the entire array as-is
 
 ### Multi-Select Field Handling
 
@@ -752,16 +758,17 @@ curl -X PATCH "https://tables.fillout.com/api/v1/bases/{databaseId}/tables/{tabl
   -H "Authorization: Bearer sk_prod_..." \
   -H "Content-Type: application/json" \
   -d '{
-    "fields": {
-      "fjdE51bBqzV": ["5307b392-cd10-4b62-bd56-e3e61076c0b2"]
+    "record": {
+      "fpwC9wNgLvN": ["5307b392-cd10-4b62-bd56-e3e61076c0b2"]
     }
   }'
 ```
 
 **⚠️ Critical**: 
-- Update uses `{"fields": {...}}` format (different from create)
-- Use field ID (not name) for `linked_record` fields
-- Provide as array even for single-value relationships
+- Update uses `{"record": {...}}` format (SAME as create!)
+- Use field ID (not name) for `linked_record` fields - field names will fail silently
+- Provide as array even for single-value relationships: `["id"]` not `"id"`
+- When copying relationship arrays from one record to another, copy the entire array as-is
 
 ### Create a Record
 ```bash
@@ -813,20 +820,69 @@ Since Fillout's API documentation is incomplete, this section tracks discovered 
 - **Solution**: Always use `{"record": {"field_name": "value", ...}}` format
 
 ### Update Record Format (2025-12-06)
-- **Different from Create**: Update uses `{"fields": {field_name: value}}` (not `{"record": {...}}`)
+- **Same as Create**: Update uses `{"record": {field_name: value}}` (same format as create!)
 - **Create**: `{"record": {field: value}}`
-- **Update**: `{"fields": {field: value}}`
+- **Update**: `{"record": {field: value}}` ✅ (NOT `{"fields": {...}}`)
+- **Common Mistake**: Using `{"fields": {...}}` format returns 400 error expecting "record"
 
 ### Linked Record Fields (2025-12-06)
 - **Critical Discovery**: `linked_record` fields require field IDs (not field names) in create/update operations
 - **Create with field name**: `{"record": {"employee_id": ["id"]}}` ❌ Creates record but field is null/empty
 - **Create with field ID**: `{"record": {"fjdE51bBqzV": ["id"]}}` ✅ Works correctly
-- **Update with field name**: `{"fields": {"employee_id": ["id"]}}` ❌ May not persist
-- **Update with field ID**: `{"fields": {"fjdE51bBqzV": ["id"]}}` ✅ Works correctly
+- **Update with field name**: `{"record": {"timezone_actual_id": ["id"]}}` ❌ Field update fails silently or returns error
+- **Update with field ID**: `{"record": {"fpwC9wNgLvN": ["id"]}}` ✅ Works correctly
 - **Why**: Fillout's API treats `linked_record` fields differently - they must be referenced by ID
 - **Finding Field IDs**: Query table structure via `GET /bases/{databaseId}` and look in `tables[].fields[].id`
 - **Regular fields**: Can use names or IDs (names preferred for readability)
 - **Linked record fields**: Must use IDs (names don't work)
+
+### Field IDs Can Change (2025-12-06)
+- **Important**: Field IDs are NOT permanent - they change when a field is deleted and recreated
+- **Scenario**: If you delete a field (e.g., `status`) and recreate it with the same name, it gets a NEW field ID
+- **Impact**: Code using hardcoded field IDs will break with error: `column "oldFieldId" does not exist`
+- **Solution**: 
+  - Use a config generation script to auto-discover field IDs from the API
+  - Store field IDs in a generated config file that can be regenerated
+  - When fields are recreated, regenerate the config to get new IDs
+- **Best Practice**: Always use constants from a generated config file, never hardcode field IDs
+
+### Reading vs Writing Fields (2025-12-06)
+- **Reading Records**: Fillout may return fields by name OR by field ID (inconsistent!)
+  - Example: `record.fields.status` OR `record.fields["feNvSx9giZs"]`
+  - **Best Practice**: Check both when reading: `record.fields.status || record.fields[STATUS_FIELD_ID]`
+- **Writing Records**: 
+  - **Regular fields**: Can use names or IDs (names preferred)
+  - **Linked record fields**: MUST use field IDs (names don't work)
+  - **Filters**: Can use names or IDs (names preferred for readability)
+- **Robust Pattern**: When reading, try both name and ID. When writing `linked_record` fields, always use ID.
+
+### Copying Relationship Arrays Between Records (2025-12-06)
+- **Context**: When copying `linked_record` field values from one record (e.g., alteration) to another (e.g., punch)
+- **Key Discovery**: Relationship arrays must be copied as arrays, using field IDs for the destination
+- **Pattern**:
+  1. Read from source: Try both field name and field ID (e.g., `alteration.fields.new_timezone_actual_id || alteration.fields[NEW_TIMEZONE_FIELD_ID]`)
+  2. Handle array format: If already array, use as-is; if single value, wrap in array; if null/undefined, use empty array
+  3. Write to destination: Use field ID (not name) for the destination field
+- **Example**:
+```typescript
+// Read from alteration (try both name and ID)
+const rawInTimezone = alteration.fields.new_timezone_actual_id 
+  || alteration.fields[NEW_TIMEZONE_ACTUAL_ID_FIELD_ID];
+
+// Normalize to array format
+let timezoneArray: string[];
+if (Array.isArray(rawInTimezone)) {
+  timezoneArray = rawInTimezone;
+} else if (rawInTimezone) {
+  timezoneArray = [rawInTimezone];
+} else {
+  timezoneArray = []; // Clear if null/undefined
+}
+
+// Write to punch using field ID (required!)
+punchUpdates[PUNCHES_TIMEZONE_ACTUAL_ID_FIELD_ID] = timezoneArray;
+```
+- **Critical**: Always use field IDs when writing `linked_record` fields, even when copying from another record
 
 ### Table Discovery
 - Use `GET /bases` to list all databases and their tables

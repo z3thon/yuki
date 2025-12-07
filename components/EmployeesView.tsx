@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRefreshView } from './Layout';
 import { useViewDataCache } from '@/lib/useViewDataCache';
 import { useViewCache } from './ViewCacheContext';
@@ -37,9 +37,16 @@ export default function EmployeesViewComponent() {
     return search ? `search:${search}` : undefined;
   }, [search]);
 
+  // Track if this is the first fetch to force token refresh
+  const isFirstFetchRef = useRef(true);
+  
   // Fetch employees with caching
   const fetchEmployees = useMemo(() => async () => {
-    const token = await getAuthToken();
+    // Force refresh token on first fetch to ensure it's valid
+    const forceRefresh = isFirstFetchRef.current;
+    isFirstFetchRef.current = false;
+    
+    const token = await getAuthToken(forceRefresh);
     if (!token) {
       throw new Error('Not authenticated');
     }
@@ -54,6 +61,24 @@ export default function EmployeesViewComponent() {
     });
     
     if (!response.ok) {
+      // If 403 and it's the first fetch, retry once with a fresh token
+      if (response.status === 403 && forceRefresh) {
+        // Wait a bit and retry with fresh token (might be a timing issue)
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const retryToken = await getAuthToken(true);
+        if (retryToken) {
+          const retryResponse = await fetch(`/api/hr/employees?${params.toString()}`, {
+            headers: {
+              'Authorization': `Bearer ${retryToken}`,
+            },
+          });
+          if (retryResponse.ok) {
+            const retryData = await retryResponse.json();
+            return { employees: retryData.employees || [] };
+          }
+        }
+      }
+      
       if (response.status === 403) {
         throw new Error('You do not have permission to view employees');
       } else {
@@ -156,13 +181,15 @@ export default function EmployeesViewComponent() {
     }
   }, [refreshContext, selectedEmployee, refetch]);
 
-  const getAuthToken = async (): Promise<string | null> => {
+  const getAuthToken = async (forceRefresh = false): Promise<string | null> => {
     // Import Firebase client-side
     const { getAuth } = await import('firebase/auth');
     const { auth } = await import('@/lib/firebase');
     const user = auth.currentUser;
     if (user) {
-      return await user.getIdToken();
+      // Force refresh on first call to ensure token is valid
+      // This prevents permission errors from stale/expired tokens
+      return await user.getIdToken(forceRefresh);
     }
     return null;
   };

@@ -41,15 +41,35 @@ export async function checkPermission(check: PermissionCheck): Promise<boolean> 
   // Get user permissions (from cache or Fillout)
   const permissions = await getUserPermissions(userId);
   
+  // Debug logging in development
+  if (process.env.NODE_ENV === 'development' && permissions.length === 0) {
+    console.warn(`[checkPermission] No permissions found for userId: ${userId}, appId: ${appId}`);
+  }
+  
   // Filter permissions for this app
   const appPermissions = permissions.filter(p => p.appId === appId);
+  
+  // Debug logging in development
+  if (process.env.NODE_ENV === 'development' && appPermissions.length === 0 && permissions.length > 0) {
+    console.warn(`[checkPermission] No ${appId} permissions found for userId: ${userId}. Total permissions: ${permissions.length}`);
+  }
+  
+  // Helper function to check if permission allows action
+  // Note: 'write' permission also grants 'approve' permission (approving is a form of writing/updating)
+  const hasAction = (permissionActions: PermissionAction[], requestedAction: PermissionAction): boolean => {
+    if (permissionActions.length === 0) return true; // Empty actions array grants all access
+    if (permissionActions.includes(requestedAction)) return true;
+    // If requesting 'approve' and user has 'write', grant it (approving is updating status)
+    if (requestedAction === 'approve' && permissionActions.includes('write')) return true;
+    return false;
+  };
   
   // Check for exact match first (most specific)
   const exactMatch = appPermissions.find(p => 
     p.viewId === viewId &&
     p.resourceType === resourceType &&
     p.resourceId === resourceId &&
-    (p.actions.length === 0 || p.actions.includes(action)) // If actions array is empty/null, grant access
+    hasAction(p.actions, action)
   );
   
   if (exactMatch) return true;
@@ -60,7 +80,7 @@ export async function checkPermission(check: PermissionCheck): Promise<boolean> 
       p.viewId === viewId &&
       !p.resourceType && // Permission doesn't specify resourceType (applies to all resources in view)
       !p.resourceId &&
-      (p.actions.length === 0 || p.actions.includes(action)) // If actions array is empty/null, grant access (workaround for unconfigured field)
+      hasAction(p.actions, action)
     );
     if (viewMatch) return true;
   }
@@ -71,7 +91,7 @@ export async function checkPermission(check: PermissionCheck): Promise<boolean> 
       !p.viewId &&
       p.resourceType === resourceType &&
       !p.resourceId &&
-      (p.actions.length === 0 || p.actions.includes(action)) // If actions array is empty/null, grant access
+      hasAction(p.actions, action)
     );
     if (resourceMatch) return true;
   }
@@ -80,7 +100,7 @@ export async function checkPermission(check: PermissionCheck): Promise<boolean> 
   const appMatch = appPermissions.find(p => 
     !p.viewId &&
     !p.resourceType &&
-    (p.actions.length === 0 || p.actions.includes(action)) // If actions array is empty/null, grant access
+    hasAction(p.actions, action)
   );
   
   return !!appMatch;
@@ -95,10 +115,11 @@ export async function checkPermission(check: PermissionCheck): Promise<boolean> 
  * @param userId - Firebase UID (must be verified via Firebase Auth token)
  */
 async function getUserPermissions(userId: string): Promise<UserPermission[]> {
-  // SECURITY: Validate userId format (Firebase UIDs are alphanumeric, 28 chars)
+  // SECURITY: Validate userId format (Firebase UIDs are alphanumeric, typically 28 chars but can vary)
   // This prevents injection attacks via cache key manipulation
-  if (!userId || typeof userId !== 'string' || !/^[a-zA-Z0-9]{28}$/.test(userId)) {
-    console.error('Invalid userId format in getUserPermissions:', userId);
+  // Firebase UIDs are typically 28 characters but can be longer, and may include underscores/hyphens
+  if (!userId || typeof userId !== 'string' || userId.length < 20 || userId.length > 128 || !/^[a-zA-Z0-9_-]+$/.test(userId)) {
+    console.error('Invalid userId format in getUserPermissions:', userId, 'length:', userId?.length);
     return []; // Return no permissions for invalid userId
   }
   
