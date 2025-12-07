@@ -530,7 +530,6 @@ export default function TimeTrackingViewComponent() {
             <select
               value={filters.employeeId}
               onChange={(e) => setFilters({ ...filters, employeeId: e.target.value })}
-              onFocus={() => setEmployeesFilterOpen(true)}
               className="w-full px-3 py-2 bg-background/50 rounded-lg border border-foreground/10 focus:outline-none focus:border-accent-blue/50"
             >
               <option value="">All Employees</option>
