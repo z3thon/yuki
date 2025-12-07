@@ -146,7 +146,7 @@ export async function GET(request: NextRequest) {
       tableId: EMPLOYEES_TABLE_ID,
       filters: Object.keys(filters).length > 0 ? filters : undefined,
       limit,
-      offset,
+      offset: offset > 0 ? offset.toString() : undefined,
     });
 
     // Get employee IDs to fetch pay rates

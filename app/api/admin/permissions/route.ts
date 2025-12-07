@@ -8,14 +8,16 @@ import { getEmployeeIdForUser } from '@/lib/employee-lookup';
 export async function GET(request: NextRequest) {
   try {
     // SECURITY: Verify auth
-    const userId = await verifyAuthAndGetUserId(request);
+    const user = await verifyAuthAndGetUser(request);
     
-    if (!userId) {
+    if (!user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
+    
+    const userId = user.uid;
 
     // Get userId from query params (for admin viewing other users)
     const targetUserId = request.nextUrl.searchParams.get('userId') || userId;

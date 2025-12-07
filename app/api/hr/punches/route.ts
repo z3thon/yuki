@@ -234,14 +234,15 @@ export async function GET(request: NextRequest) {
     
     // Handle different response formats
     let records: any[] = [];
+    const responseAny = response as any; // Type assertion for flexible response handling
     if (Array.isArray(response)) {
       records = response;
       console.log(`[${requestId}] ℹ️ Response is an array with ${records.length} records`);
     } else if (response?.records) {
       records = response.records;
       console.log(`[${requestId}] ℹ️ Response has records array with ${records.length} records`);
-    } else if (response?.data?.records) {
-      records = response.data.records;
+    } else if (responseAny?.data?.records) {
+      records = responseAny.data.records;
       console.log(`[${requestId}] ℹ️ Response has data.records array with ${records.length} records`);
     } else {
       console.warn(`[${requestId}] ⚠️ Unexpected response format from Fillout:`, JSON.stringify(response, null, 2));
@@ -258,10 +259,11 @@ export async function GET(request: NextRequest) {
       console.log(`[${requestId}] ⚠️ No punch records found - returning empty array`);
       console.log(`[${requestId}]   Applied filters:`, JSON.stringify(filters, null, 2));
       console.log(`[${requestId}]   Query options sent:`, JSON.stringify(queryOptions, null, 2));
+      const responseAnyForLog = response as any;
       console.log(`[${requestId}]   Response structure:`, {
         isArray: Array.isArray(response),
         hasRecords: !!response?.records,
-        hasDataRecords: !!response?.data?.records,
+        hasDataRecords: !!responseAnyForLog?.data?.records,
         responseKeys: response ? Object.keys(response) : [],
       });
       
@@ -272,9 +274,10 @@ export async function GET(request: NextRequest) {
           tableId: PUNCHES_TABLE_ID,
           limit: 5,
         });
+        const testResponseAny = testResponse as any;
         const testRecords = Array.isArray(testResponse) 
           ? testResponse 
-          : testResponse?.records || testResponse?.data?.records || [];
+          : testResponse?.records || testResponseAny?.data?.records || [];
         console.log(`[${requestId}] 🧪 Test query returned ${testRecords.length} records`);
         if (testRecords.length > 0) {
           console.log(`[${requestId}] 🧪 Sample record fields:`, Object.keys(testRecords[0]?.fields || {}));

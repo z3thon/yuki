@@ -406,7 +406,7 @@ async function executeTool(
         // Check permission
         const canWrite = await checkPermission({
           userId,
-          appId,
+          appId: appId as 'hr' | 'crm' | 'billing',
           viewId: 'employees',
           resourceType: 'employee',
           resourceId: employeeId,
@@ -441,7 +441,7 @@ async function executeTool(
         // Check permission
         const canWrite = await checkPermission({
           userId,
-          appId,
+          appId: appId as 'hr' | 'crm' | 'billing',
           viewId: 'employees',
           resourceType: 'employee',
           action: 'write',
