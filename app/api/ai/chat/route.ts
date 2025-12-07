@@ -4,6 +4,7 @@ import { verifyAuthAndGetUserId } from '@/lib/auth-helpers';
 import { checkPermission } from '@/lib/permissions';
 import { getViews } from '@/lib/permission-tables';
 import { queryFillout, createFilloutRecord, updateFilloutRecord, deleteFilloutRecord } from '@/lib/fillout';
+import { AppId } from '@/types';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
@@ -406,7 +407,7 @@ async function executeTool(
         // Check permission
         const canWrite = await checkPermission({
           userId,
-          appId,
+          appId: appId as AppId,
           viewId: 'employees',
           resourceType: 'employee',
           resourceId: employeeId,

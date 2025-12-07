@@ -28,6 +28,10 @@ yarn-error.log*
 .env*.local
 .env
 
+# Firebase credentials
+*-firebase-adminsdk-*.json
+dnc-time-tracker-firebase-adminsdk-*.json
+
 # vercel
 .vercel
 
