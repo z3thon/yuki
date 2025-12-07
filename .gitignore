@@ -31,6 +31,15 @@ yarn-error.log*
 # Firebase credentials
 *-firebase-adminsdk-*.json
 dnc-time-tracker-firebase-adminsdk-*.json
+firebase-adminsdk-*.json
+
+# API keys and secrets (should never be committed)
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+.secrets
 
 # vercel
 .vercel

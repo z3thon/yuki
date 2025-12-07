@@ -11,7 +11,7 @@ Using existing Firebase project: **dnc-time-tracker**
 From Firebase CLI:
 ```
 Project ID: dnc-time-tracker
-API Key: AIzaSyCB8a57Hm7pw6A03w9C2UTmOLuee33OtJs
+API Key: [Get from Firebase Console - see instructions below]
 Auth Domain: dnc-time-tracker.firebaseapp.com
 ```
 
@@ -22,7 +22,7 @@ Add these values to your `.env.local`:
 ```bash
 # Firebase Client (Public - safe to expose)
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=dnc-time-tracker
-NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyCB8a57Hm7pw6A03w9C2UTmOLuee33OtJs
+NEXT_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key_here
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=dnc-time-tracker.firebaseapp.com
 
 # Firebase Admin (Server-side - keep secret!)

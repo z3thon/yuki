@@ -10,16 +10,33 @@ Yuki is designed for administrators to:
 - **View invoices** - Access and manage client invoices
 - **Manage data** - Eventually expand to CRM, Project Management, HR, and more
 
+## 📁 Project Structure
+
+```
+yuki/
+├── app/                    # Next.js app directory (routes & API)
+├── components/             # React components
+├── lib/                    # Shared utilities & helpers
+├── types/                  # TypeScript type definitions
+├── scripts/                # Utility scripts (Python & TypeScript)
+├── docs/                   # Documentation
+│   ├── setup/             # Setup & configuration guides
+│   ├── config/            # Configuration references
+│   └── ...                # Architecture & design docs
+├── assets/                 # Static assets (images, etc.)
+└── README.md              # This file
+```
+
 ## 🏗️ Architecture
 
 ### Tech Stack
-- **Framework**: Next.js 14+ (App Router)
+- **Framework**: Next.js 16+ (App Router)
 - **Language**: TypeScript
 - **Deployment**: Vercel
 - **Authentication**: Firebase Auth (same project as Flutter app)
 - **Backend**: Vercel Serverless Functions
 - **Database**: Fillout/Zite Database (via API)
-- **AI**: AI-first architecture (to be implemented)
+- **AI**: Anthropic Claude (AI-first architecture)
 
 ### Architecture Overview
 
@@ -42,21 +59,27 @@ Next.js Admin UI (hub.discover-nocode.com)
 ## 📁 Project Structure
 
 ```
-Yuki/
-├── docs/                          # Documentation
-│   ├── FILLOUT_DATABASE_SCHEMA.md
-│   ├── FILLOUT_DATABASE_API.md
-│   ├── VERCEL_FUNCTIONS_ARCHITECTURE.md
-│   ├── ADMIN_AUTHENTICATION_SETUP.md
-│   └── ...
-├── app/                           # Next.js App Router
-│   ├── api/                       # Vercel API routes
-│   ├── (admin)/                   # Admin routes
-│   └── layout.tsx
-├── components/                    # React components
-├── lib/                           # Utilities and helpers
-├── hooks/                         # React hooks
-└── types/                         # TypeScript types
+yuki/
+├── app/                    # Next.js app directory (routes & API)
+│   ├── api/               # API routes (serverless functions)
+│   ├── [appId]/           # Dynamic app routes
+│   └── sign-in/           # Authentication pages
+├── components/             # React components
+├── lib/                   # Shared utilities & helpers
+├── types/                 # TypeScript type definitions
+├── scripts/               # Utility scripts (Python & TypeScript)
+├── docs/                  # Documentation
+│   ├── setup/            # Setup & configuration guides
+│   │   ├── QUICK_START.md
+│   │   ├── SETUP.md
+│   │   ├── FIREBASE_SETUP.md
+│   │   └── ...
+│   ├── config/           # Configuration references
+│   │   ├── TABLE_IDS.md
+│   │   └── PERMISSIONS_TO_CREATE.md
+│   └── ...               # Architecture & design docs
+├── assets/                # Static assets (images, etc.)
+└── README.md             # This file
 ```
 
 ## 🚀 Getting Started
@@ -114,6 +137,13 @@ http://localhost:3000
 ```
 
 ## 📚 Documentation
+
+### Getting Started
+
+1. **[QUICK_START.md](./docs/setup/QUICK_START.md)** - Quick setup guide
+2. **[SETUP.md](./docs/setup/SETUP.md)** - Complete setup instructions
+3. **[FIREBASE_SETUP.md](./docs/setup/FIREBASE_SETUP.md)** - Firebase configuration
+4. **[ENV_SETUP.md](./docs/setup/ENV_SETUP.md)** - Environment variables guide
 
 ### Essential Reading
 

@@ -50,7 +50,7 @@ We're using the existing `dnc-time-tracker` Firebase project for authentication 
 2. Add to `.env.local`:
    ```bash
    NEXT_PUBLIC_FIREBASE_PROJECT_ID=dnc-time-tracker
-   NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyCB8a57Hm7pw6A03w9C2UTmOLuee33OtJs
+   NEXT_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key_here
    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=dnc-time-tracker.firebaseapp.com
    FIREBASE_PROJECT_ID=dnc-time-tracker
    FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
