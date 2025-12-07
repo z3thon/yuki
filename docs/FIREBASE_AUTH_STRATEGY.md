@@ -56,7 +56,7 @@ We're using a single Firebase project for authentication across multiple apps:
 ### Web App Config (Client-side)
 ```
 Project ID: dnc-time-tracker
-API Key: [Get from Firebase Console - see FIREBASE_SETUP.md]
+API Key: AIzaSyCB8a57Hm7pw6A03w9C2UTmOLuee33OtJs
 Auth Domain: dnc-time-tracker.firebaseapp.com
 ```
 

@@ -249,7 +249,7 @@ export default function AIChat({ appId, viewId, onDataUpdate, hideHeader = false
       return <>{content}</>;
     }
 
-    const parts: (string | React.ReactElement)[] = [];
+    const parts: (string | JSX.Element)[] = [];
     let lastIndex = 0;
     const mentionRegex = /@(\w+)/g;
     let match;

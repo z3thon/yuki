@@ -3,7 +3,7 @@ import { verifyAuthAndGetUser } from '@/lib/auth-helpers';
 import { checkPermission, hasAppAccess } from '@/lib/permissions';
 import { queryFillout, getFilloutRecord } from '@/lib/fillout';
 import { getUserPermissions } from '@/lib/permission-tables';
-import { getNameMapsForUser } from '@/lib/name-cache';
+// import { getNameMapsForUser } from '@/lib/name-cache'; // TEMPORARILY DISABLED - causing hangs
 
 import { PUNCHES_TABLE_ID } from '@/lib/fillout-table-ids';
 import { PUNCHES_PUNCH_IN_TIME_FIELD_ID } from '@/lib/fillout-config.generated';
@@ -16,30 +16,11 @@ export async function GET(request: NextRequest) {
   const startTime = Date.now();
   const requestId = Math.random().toString(36).substring(7);
   
-  // LOG IMMEDIATELY - even before try/catch
-  console.log('\n' + '='.repeat(80));
-  console.log(`🚨 PUNCHES API CALLED - Request ID: ${requestId}`);
-  console.log(`   Time: ${new Date().toISOString()}`);
-  console.log(`   URL: ${request.url}`);
-  console.log(`   Method: ${request.method}`);
-  console.log('='.repeat(80));
-  
   try {
     console.log(`[${requestId}] 🔍 Starting punches API request at ${new Date().toISOString()}`);
     console.log(`[${requestId}] 📍 Step 1: Verifying auth...`);
     
-    const authStartTime = Date.now();
-    // Wrap verifyAuthAndGetUser with timeout
-    const user = await Promise.race([
-      verifyAuthAndGetUser(request),
-      new Promise<null>((resolve) => {
-        setTimeout(() => {
-          console.error(`[${requestId}] ⏰ TIMEOUT: verifyAuthAndGetUser took longer than 5 seconds`);
-          resolve(null);
-        }, 5000);
-      }),
-    ]);
-    console.log(`[${requestId}] ⏱️ verifyAuthAndGetUser took ${Date.now() - authStartTime}ms`);
+    const user = await verifyAuthAndGetUser(request);
     
     if (!user) {
       console.log(`[${requestId}] ❌ No user found - returning 401`);
@@ -52,45 +33,16 @@ export async function GET(request: NextRequest) {
     // Get user permissions once (used for both access check and filtering)
     console.log(`[${requestId}] 📍 Step 2: Getting user permissions...`);
     const permStartTime = Date.now();
-    let permissions;
-    try {
-      // Add timeout wrapper
-      const permPromise = getUserPermissions(user.uid);
-      const permTimeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('getUserPermissions timeout after 5 seconds')), 5000);
-      });
-      permissions = await Promise.race([permPromise, permTimeoutPromise]);
-      console.log(`[${requestId}] ⏱️ getUserPermissions took ${Date.now() - permStartTime}ms`);
-    } catch (permError: any) {
-      console.error(`[${requestId}] ❌ Error getting permissions:`, permError?.message);
-      // Return error instead of hanging
-      return NextResponse.json(
-        { error: 'Failed to get permissions: ' + (permError?.message || 'Timeout') },
-        { status: 500 }
-      );
-    }
+    const permissions = await getUserPermissions(user.uid);
+    console.log(`[${requestId}] ⏱️ getUserPermissions took ${Date.now() - permStartTime}ms`);
     const hrPermissions = permissions.filter(p => p.appId === 'hr');
     console.log(`[${requestId}] ✅ Got ${permissions.length} total permissions, ${hrPermissions.length} HR permissions`);
     
     // Check app access
     console.log(`[${requestId}] 📍 Step 3: Checking app access...`);
     const appAccessStartTime = Date.now();
-    let hasAccess;
-    try {
-      // Add timeout wrapper
-      const accessPromise = hasAppAccess(user.uid, 'hr');
-      const accessTimeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('hasAppAccess timeout after 5 seconds')), 5000);
-      });
-      hasAccess = await Promise.race([accessPromise, accessTimeoutPromise]);
-      console.log(`[${requestId}] ⏱️ hasAppAccess took ${Date.now() - appAccessStartTime}ms`);
-    } catch (accessError: any) {
-      console.error(`[${requestId}] ❌ Error checking app access:`, accessError?.message);
-      return NextResponse.json(
-        { error: 'Failed to check app access: ' + (accessError?.message || 'Timeout') },
-        { status: 500 }
-      );
-    }
+    const hasAccess = await hasAppAccess(user.uid, 'hr');
+    console.log(`[${requestId}] ⏱️ hasAppAccess took ${Date.now() - appAccessStartTime}ms`);
     if (!hasAccess) {
       console.log(`[${requestId}] ❌ No app access - returning 403`);
       return NextResponse.json(
@@ -105,18 +57,13 @@ export async function GET(request: NextRequest) {
     const viewPermStartTime = Date.now();
     let canReadPunches = false;
     try {
-      // Add timeout wrapper
-      const permCheckPromise = checkPermission({
+      canReadPunches = await checkPermission({
         userId: user.uid,
         appId: 'hr',
         viewId: 'time-tracking',
         resourceType: 'punch',
         action: 'read',
       });
-      const permCheckTimeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('checkPermission timeout after 5 seconds')), 5000);
-      });
-      canReadPunches = await Promise.race([permCheckPromise, permCheckTimeoutPromise]);
       console.log(`[${requestId}] ⏱️ checkPermission took ${Date.now() - viewPermStartTime}ms`);
     } catch (permissionError: any) {
       console.error(`[${requestId}] ❌ Error checking permission:`, permissionError);
@@ -210,35 +157,19 @@ export async function GET(request: NextRequest) {
     
     let response;
     try {
-      // Add timeout wrapper to prevent hanging
-      const filloutPromise = queryFillout({
+      response = await queryFillout({
         tableId: PUNCHES_TABLE_ID,
         filters: Object.keys(filters).length > 0 ? filters : undefined,
         sort: [{ fieldId: PUNCHES_PUNCH_IN_TIME_FIELD_ID, direction: 'desc' }], // Sort by most recent first (using fieldId and field ID)
         limit,
         offset: offset > 0 ? offset.toString() : undefined,
       });
-      
-      const filloutTimeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`Fillout API timeout after 10 seconds`));
-        }, 10000); // 10 second timeout
-      });
-      
-      response = await Promise.race([filloutPromise, filloutTimeoutPromise]);
       console.log(`[${requestId}] ⏱️ queryFillout took ${Date.now() - filloutStartTime}ms`);
     } catch (filloutError: any) {
       console.error(`[${requestId}] ❌ Fillout API error:`, filloutError);
       console.error(`[${requestId}] Fillout error message:`, filloutError?.message);
       console.error(`[${requestId}] Fillout error stack:`, filloutError?.stack);
-      // Return empty array instead of throwing - don't break the page
-      return NextResponse.json({
-        punches: [],
-        total: 0,
-        hasMore: false,
-        offset: 0,
-        error: filloutError?.message || 'Failed to fetch punches',
-      });
+      throw filloutError;
     }
     
     console.log(`[${requestId}] ✅ Got response from Fillout:`, {
@@ -270,50 +201,10 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    console.log(`[${requestId}] 📍 Step 7: Getting name maps from cache (with 3s timeout)...`);
-    const nameCacheStartTime = Date.now();
-    let employeeNameMap = new Map<string, string>();
-    let clientNameMap = new Map<string, string>();
-    
-    try {
-      // Try to get names from cache with a SHORT timeout - don't wait forever
-      const nameFetchPromise = getNameMapsForUser(user.uid, user.email || '');
-      const nameTimeoutPromise = new Promise<{ employeeNames: Map<string, string>; clientNames: Map<string, string> }>((resolve) => {
-        setTimeout(() => {
-          console.warn(`[${requestId}] ⏱️ Name cache timeout (3s) - continuing with empty maps (IDs will show instead of names)`);
-          resolve({
-            employeeNames: new Map(),
-            clientNames: new Map(),
-          });
-        }, 3000); // Very short 3 second timeout
-      });
-
-      const nameMaps = await Promise.race([nameFetchPromise, nameTimeoutPromise]);
-      employeeNameMap = nameMaps.employeeNames;
-      clientNameMap = nameMaps.clientNames;
-      
-      const nameCacheTime = Date.now() - nameCacheStartTime;
-      console.log(`[${requestId}] ⏱️ Name cache took ${nameCacheTime}ms`);
-      console.log(`[${requestId}] ✅ Got ${employeeNameMap.size} employee names and ${clientNameMap.size} client names from cache`);
-      
-      // Log sample of cached names
-      if (employeeNameMap.size > 0) {
-        const sampleEmployees = Array.from(employeeNameMap.entries()).slice(0, 3);
-        console.log(`[${requestId}] 📋 Sample employee names:`, sampleEmployees);
-      }
-      if (clientNameMap.size > 0) {
-        const sampleClients = Array.from(clientNameMap.entries()).slice(0, 3);
-        console.log(`[${requestId}] 📋 Sample client names:`, sampleClients);
-      }
-    } catch (error: any) {
-      console.error(`[${requestId}] ⚠️ Error getting name maps, continuing with empty maps:`, error?.message);
-      console.error(`[${requestId}] Error stack:`, error?.stack);
-      // Continue with empty maps - IDs will be displayed instead of names
-    }
-    
-    console.log(`[${requestId}] 📍 Step 8: Proceeding to process punches (will use IDs if names not available)...`);
-
-    console.log(`[${requestId}] 📍 Step 8: Processing ${response.records.length} punch records...`);
+    console.log(`[${requestId}] 📍 Step 7: Processing ${response.records.length} punch records...`);
+    console.log(`[${requestId}] ⏭️ Skipping name cache - using empty maps (names will show as "Unknown")`);
+    const employeeNameMap = new Map<string, string>();
+    const clientNameMap = new Map<string, string>();
     const processStartTime = Date.now();
 
     // Format punches with names from maps
@@ -333,13 +224,8 @@ export async function GET(request: NextRequest) {
         
         // Get names from maps (lookup fields don't work, so we fetch separately)
         // Convert IDs to strings for consistent lookup
-        // Fallback to showing the ID if name not found
-        const employeeName = employeeId 
-          ? (employeeNameMap.get(String(employeeId).trim()) || String(employeeId)) 
-          : 'No Employee';
-        const clientName = clientId 
-          ? (clientNameMap.get(String(clientId).trim()) || String(clientId)) 
-          : 'No Client';
+        const employeeName = employeeId ? (employeeNameMap.get(String(employeeId).trim()) || 'Unknown') : 'Unknown';
+        const clientName = clientId ? (clientNameMap.get(String(clientId).trim()) || 'Unknown') : 'Unknown';
         
         processedCount++;
         if (index < 3) {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getAuthInstance } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 
 export default function SignInPage() {
@@ -14,12 +14,14 @@ export default function SignInPage() {
 
   useEffect(() => {
     // If already authenticated, redirect to app
-    if (typeof window === 'undefined') return;
-    
-    const auth = getAuthInstance();
+    // This handles both initial page load and post-auth redirects
     const unsubscribe = auth.onAuthStateChanged((user) => {
       if (user) {
-        router.push('/hr');
+        setLoading(false); // Reset loading state
+        // Small delay to ensure auth state is fully propagated before redirect
+        setTimeout(() => {
+          router.push('/hr');
+        }, 100);
       }
     });
 
@@ -32,7 +34,6 @@ export default function SignInPage() {
     setLoading(true);
 
     try {
-      const auth = getAuthInstance();
       await signInWithEmailAndPassword(auth, email, password);
       router.push('/hr');
     } catch (err: any) {
@@ -47,10 +48,10 @@ export default function SignInPage() {
     setLoading(true);
 
     try {
-      const auth = getAuthInstance();
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-      router.push('/hr');
+      // Don't manually redirect - let the useEffect handle it after auth state is confirmed
+      // This prevents race conditions where AuthGuard doesn't see the user yet
     } catch (err: any) {
       setError(err.message || 'Failed to sign in with Google');
       setLoading(false);

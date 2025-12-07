@@ -25,15 +25,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log('🔍 DEPARTMENTS API: Starting fetch...');
-    
     // Get departments
     const departmentsResponse = await queryFillout({
       tableId: DEPARTMENTS_TABLE_ID,
       limit: 1000,
     });
-
-    console.log(`✅ DEPARTMENTS API: Got ${departmentsResponse?.records?.length || 0} records from Fillout`);
 
     const departments = departmentsResponse.records.map((record: any) => ({
       id: record.id,
@@ -50,15 +46,6 @@ export async function GET(request: NextRequest) {
       createdAt: record.fields.created_at || record.createdTime,
       updatedAt: record.fields.updated_at || record.createdTime,
     }));
-
-    // Print department cache contents - MAKE IT VERY VISIBLE
-    console.log('\n' + '='.repeat(80));
-    console.log(`📊 DEPARTMENT CACHE (${departments.length} entries):`);
-    console.log('='.repeat(80));
-    departments.forEach((dept, index) => {
-      console.log(`  ${index + 1}. ID: ${dept.id} -> Name: ${dept.name} (company: ${dept.companyId || 'none'})`);
-    });
-    console.log('='.repeat(80) + '\n');
 
     return NextResponse.json({ departments });
   } catch (error: any) {

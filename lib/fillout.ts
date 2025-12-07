@@ -8,7 +8,7 @@ const FILLOUT_API_TOKEN = process.env.FILLOUT_API_TOKEN || process.env.FILLOUT_A
 export interface FilloutQueryOptions {
   tableId: string;
   filters?: Record<string, any>;
-  sort?: Array<{ fieldId: string; direction: 'asc' | 'desc' }>; // Fillout API requires 'fieldId' not 'field'
+  sort?: Array<{ field: string; direction: 'asc' | 'desc' }>;
   limit?: number;
   offset?: string;
   fields?: string[];

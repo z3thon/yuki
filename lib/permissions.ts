@@ -36,67 +36,54 @@ export interface PermissionCheck {
  * This should be called from Vercel functions after verifying auth
  */
 export async function checkPermission(check: PermissionCheck): Promise<boolean> {
-  try {
-    const { userId, appId, viewId, resourceType, resourceId, action } = check;
-    
-    // Validate inputs
-    if (!userId || !appId || !action) {
-      console.error('Invalid permission check parameters:', { userId, appId, action });
-      return false;
-    }
-    
-    // Get user permissions (from cache or Fillout)
-    const permissions = await getUserPermissions(userId);
-    
-    // Filter permissions for this app
-    const appPermissions = permissions.filter(p => p.appId === appId);
+  const { userId, appId, viewId, resourceType, resourceId, action } = check;
   
-    // Check for exact match first (most specific)
-    const exactMatch = appPermissions.find(p => 
+  // Get user permissions (from cache or Fillout)
+  const permissions = await getUserPermissions(userId);
+  
+  // Filter permissions for this app
+  const appPermissions = permissions.filter(p => p.appId === appId);
+  
+  // Check for exact match first (most specific)
+  const exactMatch = appPermissions.find(p => 
+    p.viewId === viewId &&
+    p.resourceType === resourceType &&
+    p.resourceId === resourceId &&
+    (p.actions.length === 0 || p.actions.includes(action)) // If actions array is empty/null, grant access
+  );
+  
+  if (exactMatch) return true;
+  
+  // Check for view-level permission (viewId matches, no resourceType specified in permission)
+  if (viewId) {
+    const viewMatch = appPermissions.find(p => 
       p.viewId === viewId &&
-      p.resourceType === resourceType &&
-      p.resourceId === resourceId &&
-      (p.actions.length === 0 || p.actions.includes(action)) // If actions array is empty/null, grant access
+      !p.resourceType && // Permission doesn't specify resourceType (applies to all resources in view)
+      !p.resourceId &&
+      (p.actions.length === 0 || p.actions.includes(action)) // If actions array is empty/null, grant access (workaround for unconfigured field)
     );
-    
-    if (exactMatch) return true;
-    
-    // Check for view-level permission (viewId matches, no resourceType specified in permission)
-    if (viewId) {
-      const viewMatch = appPermissions.find(p => 
-        p.viewId === viewId &&
-        !p.resourceType && // Permission doesn't specify resourceType (applies to all resources in view)
-        !p.resourceId &&
-        (p.actions.length === 0 || p.actions.includes(action)) // If actions array is empty/null, grant access (workaround for unconfigured field)
-      );
-      if (viewMatch) return true;
-    }
-    
-    // Check for resource-level permission (resourceType matches, no viewId specified)
-    if (resourceType) {
-      const resourceMatch = appPermissions.find(p => 
-        !p.viewId &&
-        p.resourceType === resourceType &&
-        !p.resourceId &&
-        (p.actions.length === 0 || p.actions.includes(action)) // If actions array is empty/null, grant access
-      );
-      if (resourceMatch) return true;
-    }
-    
-    // Check for app-level permission (no view/resource specified)
-    const appMatch = appPermissions.find(p => 
-      !p.viewId &&
-      !p.resourceType &&
-      (p.actions.length === 0 || p.actions.includes(action)) // If actions array is empty/null, grant access
-    );
-    
-    return !!appMatch;
-  } catch (error: any) {
-    console.error('Error in checkPermission:', error);
-    console.error('Permission check parameters:', check);
-    // Fail-safe: return false on error (no permissions)
-    return false;
+    if (viewMatch) return true;
   }
+  
+  // Check for resource-level permission (resourceType matches, no viewId specified)
+  if (resourceType) {
+    const resourceMatch = appPermissions.find(p => 
+      !p.viewId &&
+      p.resourceType === resourceType &&
+      !p.resourceId &&
+      (p.actions.length === 0 || p.actions.includes(action)) // If actions array is empty/null, grant access
+    );
+    if (resourceMatch) return true;
+  }
+  
+  // Check for app-level permission (no view/resource specified)
+  const appMatch = appPermissions.find(p => 
+    !p.viewId &&
+    !p.resourceType &&
+    (p.actions.length === 0 || p.actions.includes(action)) // If actions array is empty/null, grant access
+  );
+  
+  return !!appMatch;
 }
 
 /**
@@ -108,10 +95,9 @@ export async function checkPermission(check: PermissionCheck): Promise<boolean> 
  * @param userId - Firebase UID (must be verified via Firebase Auth token)
  */
 async function getUserPermissions(userId: string): Promise<UserPermission[]> {
-  // SECURITY: Validate userId format (Firebase UIDs are alphanumeric, typically 28 chars but can vary)
+  // SECURITY: Validate userId format (Firebase UIDs are alphanumeric, 28 chars)
   // This prevents injection attacks via cache key manipulation
-  // Relaxed validation: userId is already verified via Firebase Auth, so we just need basic validation
-  if (!userId || typeof userId !== 'string' || userId.length < 20 || userId.length > 128 || !/^[a-zA-Z0-9_-]+$/.test(userId)) {
+  if (!userId || typeof userId !== 'string' || !/^[a-zA-Z0-9]{28}$/.test(userId)) {
     console.error('Invalid userId format in getUserPermissions:', userId);
     return []; // Return no permissions for invalid userId
   }

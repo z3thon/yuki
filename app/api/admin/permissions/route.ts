@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyAuthAndGetUser, verifyAuthAndGetUserId } from '@/lib/auth-helpers';
+import { verifyAuthAndGetUser } from '@/lib/auth-helpers';
 import { getUserPermissions, createUserPermission } from '@/lib/permission-tables';
 import { grantAppAccess, getUserAppAccess } from '@/lib/permission-tables';
 import { clearPermissionCache } from '@/lib/permissions';

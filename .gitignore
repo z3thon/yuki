@@ -28,23 +28,13 @@ yarn-error.log*
 .env*.local
 .env
 
-# Firebase credentials
-*-firebase-adminsdk-*.json
-dnc-time-tracker-firebase-adminsdk-*.json
-firebase-adminsdk-*.json
-
-# API keys and secrets (should never be committed)
-*.key
-*.pem
-*.p12
-*.pfx
-secrets/
-.secrets
-
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# firebase admin sdk (sensitive)
+*-firebase-adminsdk-*.json
 
