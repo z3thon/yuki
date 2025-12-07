@@ -95,8 +95,8 @@ async function grantHRPermissions(email: string) {
         employeeId: employeeId || undefined,
         appId: 'hr',
         viewId,
-        resourceType: null, // null = all resources
-        resourceId: null,   // null = all resources
+        resourceType: undefined, // undefined = all resources
+        resourceId: undefined,   // undefined = all resources
         actions: ['read', 'write'], // Full access
       });
       console.log(`   ✅ Granted permissions for view: ${viewId}`);
