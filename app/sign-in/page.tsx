@@ -32,6 +32,7 @@ export default function SignInPage() {
     setLoading(true);
 
     try {
+      const auth = getAuthInstance();
       await signInWithEmailAndPassword(auth, email, password);
       router.push('/hr');
     } catch (err: any) {
