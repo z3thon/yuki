@@ -232,20 +232,10 @@ export async function GET(request: NextRequest) {
       });
     }
     
-    // Handle different response formats
+    // Handle response - FilloutResponse has records property directly
     let records: any[] = [];
-    const responseAny = response as any; // Type assertion for flexible response handling
-    if (Array.isArray(response)) {
-      records = response;
-      console.log(`[${requestId}] ℹ️ Response is an array with ${records.length} records`);
-    } else if (response?.records) {
-      records = response.records;
-      console.log(`[${requestId}] ℹ️ Response has records array with ${records.length} records`);
-    } else if (responseAny?.data?.records) {
-      records = responseAny.data.records;
-      console.log(`[${requestId}] ℹ️ Response has data.records array with ${records.length} records`);
-    } else {
-      console.warn(`[${requestId}] ⚠️ Unexpected response format from Fillout:`, JSON.stringify(response, null, 2));
+    if (!response) {
+      console.error(`[${requestId}] ❌ Response is null or undefined`);
       return NextResponse.json({
         punches: [],
         total: 0,
@@ -253,17 +243,40 @@ export async function GET(request: NextRequest) {
         offset: 0,
       });
     }
+    
+    // FilloutResponse type defines records directly: { records: [...], hasMore?: boolean, offset?: string }
+    if (response.records && Array.isArray(response.records)) {
+      records = response.records;
+      console.log(`[${requestId}] ✅ Found ${records.length} records in response.records`);
+    } else {
+      // Fallback: check if it's an array (shouldn't happen but be defensive)
+      const responseAny = response as any;
+      if (Array.isArray(response)) {
+        records = response;
+        console.log(`[${requestId}] ⚠️ Response is array (unexpected format), found ${records.length} records`);
+      } else {
+        console.warn(`[${requestId}] ⚠️ Unexpected response format from Fillout:`, JSON.stringify(response, null, 2));
+        console.warn(`[${requestId}] ⚠️ Response type:`, typeof response);
+        console.warn(`[${requestId}] ⚠️ Response keys:`, Object.keys(response || {}));
+        return NextResponse.json({
+          punches: [],
+          total: 0,
+          hasMore: false,
+          offset: 0,
+        });
+      }
+    }
 
     // Early return if no records
     if (records.length === 0) {
       console.log(`[${requestId}] ⚠️ No punch records found - returning empty array`);
       console.log(`[${requestId}]   Applied filters:`, JSON.stringify(filters, null, 2));
       console.log(`[${requestId}]   Query options sent:`, JSON.stringify(queryOptions, null, 2));
-      const responseAnyForLog = response as any;
       console.log(`[${requestId}]   Response structure:`, {
         isArray: Array.isArray(response),
         hasRecords: !!response?.records,
-        hasDataRecords: !!responseAnyForLog?.data?.records,
+        recordsIsArray: Array.isArray(response?.records),
+        recordsLength: response?.records?.length || 0,
         responseKeys: response ? Object.keys(response) : [],
       });
       
@@ -274,10 +287,7 @@ export async function GET(request: NextRequest) {
           tableId: PUNCHES_TABLE_ID,
           limit: 5,
         });
-        const testResponseAny = testResponse as any;
-        const testRecords = Array.isArray(testResponse) 
-          ? testResponse 
-          : testResponse?.records || testResponseAny?.data?.records || [];
+        const testRecords = testResponse?.records || [];
         console.log(`[${requestId}] 🧪 Test query returned ${testRecords.length} records`);
         if (testRecords.length > 0) {
           console.log(`[${requestId}] 🧪 Sample record fields:`, Object.keys(testRecords[0]?.fields || {}));
