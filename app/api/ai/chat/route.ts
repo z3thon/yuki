@@ -442,7 +442,7 @@ async function executeTool(
         // Check permission
         const canWrite = await checkPermission({
           userId,
-          appId,
+          appId: appId as AppId,
           viewId: 'employees',
           resourceType: 'employee',
           action: 'write',
