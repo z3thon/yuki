@@ -99,8 +99,10 @@ export async function POST(
         punchUpdates.punch_in_time = alteration.fields.new_punch_in_time;
       }
       
-      // Copy new punch out time if provided (can be null to clear it)
-      if (alteration.fields.new_punch_out_time !== undefined) {
+      // Copy new punch out time if provided (only if non-empty - empty means they only updated punch in time)
+      if (alteration.fields.new_punch_out_time !== undefined && 
+          alteration.fields.new_punch_out_time !== null && 
+          alteration.fields.new_punch_out_time !== '') {
         punchUpdates.punch_out_time = alteration.fields.new_punch_out_time;
       }
       
@@ -148,7 +150,11 @@ export async function POST(
       }
 
       // new_punch_out_timezone_actual_id goes to punch_out_timezone_actual_id (punch out timezone)
-      if (rawOutTimezoneField !== undefined) {
+      // Only copy if punch out time is also being updated (empty means they only updated punch in time)
+      if (rawOutTimezoneField !== undefined && 
+          alteration.fields.new_punch_out_time !== undefined && 
+          alteration.fields.new_punch_out_time !== null && 
+          alteration.fields.new_punch_out_time !== '') {
         // Copy the array directly - if it's already an array, use it; if single value, wrap in array
         // Use field ID for punch update (required for linked_record fields)
         if (Array.isArray(rawOutTimezoneField)) {
